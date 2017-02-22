@@ -14,6 +14,8 @@
 
 #include <functional>
 #include <vector>
+#include <cstdlib>
+#include <atomic>
 namespace peloton {
 namespace index {
 
@@ -33,13 +35,11 @@ class SkipList {
   class BaseNode;
   const KeyComparator key_cmp_obj;
   const KeyEqualityChecker key_eq_obj;
-  typedef std::vector<BaseNode *> ArrayNode;
-
+  typedef std::vector<SkipList::BaseNode *> ArrayNode;
   enum class NodeType : short {
-    InnerNode = 0,
-    LeafDataNode = 1,
-    HeaderNode = 2,
-    FooterNode = 3,
+    DataNode = 0,
+    HeaderNode = 1,
+    FooterNode = 2,
   };
 
  public:
@@ -78,7 +78,7 @@ class SkipList {
         }
       } else {  // right node is data node
         BaseNode *current_node_right = current_node->right->at(current_level);
-        if (key_cmp_obj(current_node_right->node_key, find_key)) {
+        if (KeyCmpLess(current_node_right->node_key, find_key)) {
           current_array_node = current_node->right;
           current_node = current_node_right;
         } else {
@@ -94,7 +94,115 @@ class SkipList {
     return nullptr;
   }
 
+  bool insert(const KeyType &key, const ValueType &value) {
+    unsigned int n = 0;
+    while ((std::rand() % 2 == 0) && (n < SKIPLIST_MAX_LEVEL)) {
+      n++;
+    }
+    ArrayNode *array_node_insertion = initArrayNode(key, value, n);
+
+    // TODO: if the CAS fails, do the cleaning work
+    return insert_recursive(*array_node_insertion, header, n, SKIPLIST_MAX_LEVEL - 1);
+  }
+
  private:
+  bool insert_recursive(ArrayNode &insert_array,
+                        ArrayNode &cursor_array,
+                        int height,
+                        int level) {
+    // Implemented according to pseudo-code from http://ticki.github.io/blog/skip-lists-done-right/
+    BaseNode *cursor_node = cursor_array[level];
+    if (cursor_node->right != &footer && KeyCmpLess(cursor_node->right->at(level)->node_key, insert_array[0])) {
+      // If right isn't "overshot" (i.e. we are going to long), we go right.
+      return insert_recursive(insert_array, *(cursor_node->right), height, level);
+    } else {
+      BaseNode *insert_node = insert_array[level];
+      if (level == 0) {
+        //   We're at bottom level and the right node is overshot (or footer), hence
+        //   we've reached our goal, so we insert the node in between root
+        //   and the node next to root.
+        ArrayNode *old = cursor_node->right;
+        insert_node->right = old;
+        return __sync_bool_compare_and_swap(cursor_node->right, old, insert_array);
+      } else {
+        if (level <= height) {
+          // Our level is below the height, hence we need to insert a
+          // link before we go on.
+          ArrayNode *old = cursor_node->right;
+          cursor_node->right = &insert_array;
+          insert_node->right = old;
+          if (!__sync_bool_compare_and_swap(cursor_node->right, old, insert_array)) {
+            return false;
+          }
+        }
+        return insert_recursive(insert_array, cursor_array, height, level - 1);
+      }
+    }
+  }
+
+  ArrayNode *initArrayNode(const KeyType &key, const ValueType &value, unsigned int n) {
+    // TODO: use memory pool to re-implement this function
+    ArrayNode *array_node_insertion = new std::vector<BaseNode *>;
+    for (short i = 0; i < n; ++i) {
+      array_node_insertion->push_back(new BaseNode(NodeType::DataNode, i, key, value));
+    }
+    return array_node_insertion;
+  }
+
+  ///////////////////////////////////////////////////////////////////
+  // Key Comparison Member Functions
+  ///////////////////////////////////////////////////////////////////
+
+  /*
+   * KeyCmpLess() - Compare two keys for "less than" relation
+   *
+   * If key1 < key2 return true
+   * If not return false
+   *
+   * NOTE: In older version of the implementation this might be defined
+   * as the comparator to wrapped key type. However wrapped key has
+   * been removed from the newest implementation, and this function
+   * compares KeyType specified in template argument.
+   */
+  inline bool KeyCmpLess(const KeyType &key1, const KeyType &key2) const {
+    return key_cmp_obj(key1, key2);
+  }
+
+  /*
+   * KeyCmpEqual() - Compare a pair of keys for equality
+   *
+   * This functions compares keys for equality relation
+   */
+  inline bool KeyCmpEqual(const KeyType &key1, const KeyType &key2) const {
+    return key_eq_obj(key1, key2);
+  }
+
+  /*
+   * KeyCmpGreaterEqual() - Compare a pair of keys for >= relation
+   *
+   * It negates result of keyCmpLess()
+   */
+  inline bool KeyCmpGreaterEqual(const KeyType &key1,
+                                 const KeyType &key2) const {
+    return !KeyCmpLess(key1, key2);
+  }
+
+  /*
+   * KeyCmpGreater() - Compare a pair of keys for > relation
+   *
+   * It flips input for keyCmpLess()
+   */
+  inline bool KeyCmpGreater(const KeyType &key1, const KeyType &key2) const {
+    return KeyCmpLess(key2, key1);
+  }
+
+  /*
+   * KeyCmpLessEqual() - Compare a pair of keys for <= relation
+   */
+  inline bool KeyCmpLessEqual(const KeyType &key1, const KeyType &key2) const {
+    return !KeyCmpGreater(key1, key2);
+  }
+
   ArrayNode header;
   ArrayNode footer;
 
@@ -102,13 +210,13 @@ class SkipList {
    public:
 
     NodeType node_type;
-    short level;
+    int level;
     bool deleted;
     uint32_t epoch;
     /*
      * Constructor
      */
-    NodeMetaData(NodeType node_type, short level) : node_type{node_type} {
+    NodeMetaData(NodeType node_type, int level) : node_type{node_type} {
       if (level > SKIPLIST_MAX_LEVEL) {
         this->level = SKIPLIST_MAX_LEVEL;
       }
@@ -123,7 +231,8 @@ class SkipList {
     NodeMetaData metadata;
 
    public:
-    ArrayNode *right;
+    std::vector<BaseNode *> *right;
+    // TODO: Ensure all operations for right are done efficiently
     KeyType node_key;
     ValueType item_value;
 
@@ -131,12 +240,13 @@ class SkipList {
      * Constructor - Initialize type and metadata
      */
     BaseNode(NodeType node_type,
-             short level) : metadata{node_type, level} {
+             int level) : metadata{node_type, level} {
       this->right = nullptr;
     };
 
+    // TODO: shall we copy item_value during initialization?
     BaseNode(NodeType node_type,
-             short level,
+             int level,
              KeyType node_key,
              ValueType item_value
     ) : BaseNode{node_type, level} {
