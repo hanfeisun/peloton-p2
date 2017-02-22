@@ -33,6 +33,7 @@ class SkipList {
   class BaseNode;
   const KeyComparator key_cmp_obj;
   const KeyEqualityChecker key_eq_obj;
+  typedef std::vector<BaseNode *> ArrayNode;
 
   enum class NodeType : short {
     InnerNode = 0,
@@ -45,61 +46,57 @@ class SkipList {
   SkipList() :
       key_cmp_obj{KeyComparator()},
       key_eq_obj{KeyEqualityChecker()} {
+
     for (short i = 0; i < SKIPLIST_MAX_LEVEL; ++i) {
       BaseNode *h_node = new BaseNode(NodeType::HeaderNode, i);
       BaseNode *f_node = new BaseNode(NodeType::FooterNode, i);
-      h_node->right = f_node;
-
-      if (i > 0) {
-        h_node->down = header[i - 1];
-        f_node->down = footer[i - 1];
-      }
+      h_node->right = &footer;
       header.push_back(h_node);
       footer.push_back(f_node);
     }
   }
 
-
   /*
-  * find() - Given a search key, return the leaf node with key no smaller than find key
+  * find() - Given a search key, return the first leaf node with key no smaller than find key
   *          if no such key exists, return nullptr
   */
   BaseNode *find(const KeyType &find_key) {
     int current_level = SKIPLIST_MAX_LEVEL;
-    BaseNode *current_node = header[SKIPLIST_MAX_LEVEL - 1];
+    ArrayNode *current_array_node = &header;
+    BaseNode *current_node = current_array_node->at(SKIPLIST_MAX_LEVEL - 1);
 
     // loop invariant:
     // 1). current_level non-negative
     // 2). current_node is either header node or data node with key < find_key
     while (current_level >= 0) {
-      if (current_node->right->GetType() == NodeType::FooterNode) {
+      if (current_node->right == &footer) {
         if (current_level == 0) {
           return nullptr;
         } else {
           current_level--;
-          current_node = current_node->down;
+          current_node = current_array_node->at(current_level);
         }
       } else {  // right node is data node
-
-        if (key_cmp_obj(current_node->right->node_key, find_key)) {
-          current_node = current_node->right;
+        BaseNode *current_node_right = current_node->right->at(current_level);
+        if (key_cmp_obj(current_node_right->node_key, find_key)) {
+          current_array_node = current_node->right;
+          current_node = current_node_right;
         } else {
           if (current_level == 0) {
-            return current_node->right;
+            return current_node_right;
           } else {
             current_level--;
-            current_node = current_node->down;
+            current_node = current_array_node->at(current_level);
           }
         }
       }
     }
-
     return nullptr;
   }
 
  private:
-  std::vector<BaseNode *> header;
-  std::vector<BaseNode *> footer;
+  ArrayNode header;
+  ArrayNode footer;
 
   class NodeMetaData {
    public:
@@ -126,8 +123,7 @@ class SkipList {
     NodeMetaData metadata;
 
    public:
-    BaseNode *right;
-    BaseNode *down;
+    ArrayNode *right;
     KeyType node_key;
     ValueType item_value;
 
@@ -137,7 +133,6 @@ class SkipList {
     BaseNode(NodeType node_type,
              short level) : metadata{node_type, level} {
       this->right = nullptr;
-      this->down = nullptr;
     };
 
     BaseNode(NodeType node_type,
