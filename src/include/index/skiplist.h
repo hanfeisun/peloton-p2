@@ -101,35 +101,23 @@ class SkipList {
   std::vector<BaseNode *> header;
   std::vector<BaseNode *> footer;
 
-  class NodeMetaData {
-   public:
-
-    NodeType node_type;
-    short level;
-    bool deleted;
-    uint32_t epoch;
-    /*
-     * Constructor
-     */
-    NodeMetaData(NodeType node_type, short level) : node_type{node_type} {
-      if (level > SKIPLIST_MAX_LEVEL) {
-        this->level = SKIPLIST_MAX_LEVEL;
-      }
-    };
-  };
-
   class BaseNode {
     // We hold its data structure as private to force using member functions
     // for member access
    private:
     // This holds low key, high key, next node ID, type, depth and item count
-    NodeMetaData metadata;
 
    public:
     BaseNode *right;
     BaseNode *down;
     KeyType node_key;
     ValueType item_value;
+    NodeType node_type;
+    short level;
+    uint32_t epoch;
+    void mark_deleted();
+    bool is_deleted();
+    BaseNode *get_right_node();
 
     /*
      * Constructor - Initialize type and metadata
