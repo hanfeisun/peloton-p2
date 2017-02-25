@@ -41,6 +41,10 @@ class SkipList {
   const KeyEqualityChecker key_eq_obj;
   const ValueEqualityChecker value_eq_obj;
 
+  const int find_prev = -1;
+  const int find_equal = 0;
+  const int find_gte = 1;
+
   /*
    * types of skiplist node. A leaf data node is a node at skiplist
    * level 0 (bottom level). A InnerDataNode is a node at level > 0.
@@ -84,10 +88,10 @@ public:
 
   }
 
-  bool insert_key(const KeyType &key, const ValueType &value);
-  bool delete_key(const KeyType &key, const ValueType &value);
+  bool insert_key(const KeyType &key, const ValueType &value) {return false;}
+  bool delete_key(const KeyType &key, const ValueType &value) {return false;}
   void GetValue(const KeyType &search_key,
-                std::vector<ValueType> &value_list);
+                std::vector<ValueType> &value_list) {return;}
   // This gives a hint on whether GC is needed on the index
   // For those that do not need GC this always return false
   bool NeedGC() { return false;}  // TODO: add need gc check
@@ -98,16 +102,22 @@ public:
 
 
   /*
-  * find() - Given a search key, return the leaf node with key no smaller than find key
-  *          if no such key exists, return nullptr
-  */
-//  BaseNode *find(const KeyType &find_key) {
+   * search_key() - Given a search key, return the leaf node given the find_mode
+   *                if no such key exists, return nullptr
+   *
+   * If the search_mode is find_prev, then return the largest node with key < search key
+   * If the search_mode is find_equal, then return node with key = search key
+   * If the search_mode is find_gte, then return the smallest node with key >= search key
+   *
+   */
+  BaseNode* search_key(const KeyType &search_key, int search_mode) {
 //    int current_level = SKIPLIST_MAX_LEVEL;
 //    BaseNode *current_node = header[SKIPLIST_MAX_LEVEL - 1];
 //
 //    // loop invariant:
 //    // 1). current_level non-negative
-//    // 2). current_node is either header node or data node with key < find_key
+//    // 2). current_node is not deleted
+//    // 3). current_node.key < search_key
 //    while (current_level >= 0) {
 //      if (current_node->right->GetType() == NodeType::FooterNode) {
 //        if (current_level == 0) {
@@ -118,7 +128,7 @@ public:
 //        }
 //      } else {  // right node is data node
 //
-//        if (key_cmp_obj(current_node->right->node_key, find_key)) {
+//        if (key_cmp_obj(current_node->right->node_key, search_key)) {
 //          current_node = current_node->right;
 //        } else {
 //          if (current_level == 0) {
@@ -130,14 +140,36 @@ public:
 //        }
 //      }
 //    }
-//
-//    return nullptr;
-//  }
+    return nullptr;
+  }
 
  private:
   std::vector<BaseNode *> header;
   std::vector<BaseNode *> footer;
   bool supportDupKey;  //  whether or not support duplicate key in skiplist
+
+  /*
+   * Given a node, find the first node to its right that is not deleted
+   * return null if no such node
+   */
+  BaseNode* get_right_undeleted_node(const BaseNode *current) {
+    assert(current != nullptr);  // should never pass in a null pointer
+    assert(current->right != nullptr);  // a inner/leaf always have right pointer
+
+    BaseNode *next = current->right;
+
+    while (next->is_deleted() && next->node_type != NodeType::FooterNode) {
+      next = next -> right;
+    }
+
+    if (next->node_type == NodeType::FooterNode) {
+      return nullptr;
+    }
+    else {
+      return next;
+    }
+  }
+
 
   class BaseNode {
    public:
