@@ -36,10 +36,11 @@ namespace index {
 
 #define SKIPLIST_MAX_LEVEL 16
 
-typedef peloton::index::BwTreeBase SkipListBase;
+
+using SkipListBase=BwTreeBase;
 
 SKIPLIST_TEMPLATE_ARGUMENTS
-class SkipList: public SkipListBase {
+class SkipList : public SkipListBase {
   // TODO: Add your declarations here
 
   class BaseNode;
@@ -94,20 +95,37 @@ class SkipList: public SkipListBase {
     }
   }
 
-  ~SkipList();
+  ~SkipList() {
 
-  void PerformGarbageCollection();
-  bool Insert(const KeyType &key, const ValueType &value);
-  bool Delete(const KeyType &key, const ValueType &value);
+  }
+
+  void PerformGarbageCollection() {
+
+  }
+  bool Insert(const KeyType &key, const ValueType &value) {
+    return false;
+  }
+  bool Delete(const KeyType &key, const ValueType &value) {
+    return false;
+  }
 
   bool ConditionalInsert(const KeyType &key,
                          const ValueType &value,
                          std::function<bool(const void *)> predicate,
-                         bool *predicate_satisfied);
+                         bool *predicate_satisfied) {
+    return false;
+  }
 
   void GetValue(const KeyType &search_key,
-                std::vector<ValueType> &value_list);
-  void AddGarbageNode(const BaseNode *node_p);
+                std::vector<ValueType> &value_list) {
+    return;
+  }
+
+  void AddGarbageNode(const BaseNode *node_p) {
+    return;
+  }
+
+
 
 
   /*
@@ -483,8 +501,6 @@ class SkipList: public SkipListBase {
       // And then switch current epoch pointer
       current_epoch_p = epoch_node_p;
 
-
-
       return;
     }
 
@@ -525,7 +541,10 @@ class SkipList: public SkipListBase {
      * NOTE: There is no race condition in this function since it is
      * only called by the cleaner thread
      */
-    void ClearEpoch();
+
+    void ClearEpoch() {
+      return;
+    }
 
     /*
      * ThreadFunc() - The cleaner thread executes this every GC_INTERVAL ms
