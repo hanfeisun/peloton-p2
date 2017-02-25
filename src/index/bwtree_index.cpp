@@ -23,19 +23,19 @@ namespace index {
 BWTREE_TEMPLATE_ARGUMENTS
 BWTREE_INDEX_TYPE::BWTreeIndex(IndexMetadata *metadata)
     :  // Base class
-      Index{metadata},
-      // Key "less than" relation comparator
-      comparator{},
-      // Key equality checker
-      equals{},
-      // Key hash function
-      hash_func{},
-      // NOTE: These two arguments need to be constructed in advance
-      // and do not have trivial constructor
-      //
-      // NOTE 2: We set the first parameter to false to disable automatic GC
-      //
-      container{false, comparator, equals, hash_func} {
+    Index{metadata},
+    // Key "less than" relation comparator
+    comparator{},
+    // Key equality checker
+    equals{},
+    // Key hash function
+    hash_func{},
+    // NOTE: These two arguments need to be constructed in advance
+    // and do not have trivial constructor
+    //
+    // NOTE 2: We set the first parameter to false to disable automatic GC
+    //
+    container{false, comparator, equals, hash_func} {
   return;
 }
 
@@ -278,49 +278,59 @@ std::string BWTREE_INDEX_TYPE::GetTypeName() const { return "BWTree"; }
 
 // IMPORTANT: Make sure you don't exceed CompactIntegerKey_MAX_SLOTS
 
-template class BWTreeIndex<CompactIntsKey<1>, ItemPointer *,
-                           CompactIntsComparator<1>,
-                           CompactIntsEqualityChecker<1>, CompactIntsHasher<1>,
-                           ItemPointerComparator, ItemPointerHashFunc>;
-template class BWTreeIndex<CompactIntsKey<2>, ItemPointer *,
-                           CompactIntsComparator<2>,
-                           CompactIntsEqualityChecker<2>, CompactIntsHasher<2>,
-                           ItemPointerComparator, ItemPointerHashFunc>;
-template class BWTreeIndex<CompactIntsKey<3>, ItemPointer *,
-                           CompactIntsComparator<3>,
-                           CompactIntsEqualityChecker<3>, CompactIntsHasher<3>,
-                           ItemPointerComparator, ItemPointerHashFunc>;
-template class BWTreeIndex<CompactIntsKey<4>, ItemPointer *,
-                           CompactIntsComparator<4>,
-                           CompactIntsEqualityChecker<4>, CompactIntsHasher<4>,
-                           ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<CompactIntsKey<1>, ItemPointer *,
+                  CompactIntsComparator<1>,
+                  CompactIntsEqualityChecker<1>, CompactIntsHasher<1>,
+                  ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<CompactIntsKey<2>, ItemPointer *,
+                  CompactIntsComparator<2>,
+                  CompactIntsEqualityChecker<2>, CompactIntsHasher<2>,
+                  ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<CompactIntsKey<3>, ItemPointer *,
+                  CompactIntsComparator<3>,
+                  CompactIntsEqualityChecker<3>, CompactIntsHasher<3>,
+                  ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<CompactIntsKey<4>, ItemPointer *,
+                  CompactIntsComparator<4>,
+                  CompactIntsEqualityChecker<4>, CompactIntsHasher<4>,
+                  ItemPointerComparator, ItemPointerHashFunc>;
 
 // Generic key
-template class BWTreeIndex<GenericKey<4>, ItemPointer *,
-                           FastGenericComparator<4>, GenericEqualityChecker<4>,
-                           GenericHasher<4>, ItemPointerComparator,
-                           ItemPointerHashFunc>;
-template class BWTreeIndex<GenericKey<8>, ItemPointer *,
-                           FastGenericComparator<8>, GenericEqualityChecker<8>,
-                           GenericHasher<8>, ItemPointerComparator,
-                           ItemPointerHashFunc>;
-template class BWTreeIndex<GenericKey<16>, ItemPointer *,
-                           FastGenericComparator<16>,
-                           GenericEqualityChecker<16>, GenericHasher<16>,
-                           ItemPointerComparator, ItemPointerHashFunc>;
-template class BWTreeIndex<GenericKey<64>, ItemPointer *,
-                           FastGenericComparator<64>,
-                           GenericEqualityChecker<64>, GenericHasher<64>,
-                           ItemPointerComparator, ItemPointerHashFunc>;
-template class BWTreeIndex<GenericKey<256>, ItemPointer *,
-                           FastGenericComparator<256>,
-                           GenericEqualityChecker<256>, GenericHasher<256>,
-                           ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<GenericKey<4>, ItemPointer *,
+                  FastGenericComparator<4>, GenericEqualityChecker<4>,
+                  GenericHasher<4>, ItemPointerComparator,
+                  ItemPointerHashFunc>;
+template
+class BWTreeIndex<GenericKey<8>, ItemPointer *,
+                  FastGenericComparator<8>, GenericEqualityChecker<8>,
+                  GenericHasher<8>, ItemPointerComparator,
+                  ItemPointerHashFunc>;
+template
+class BWTreeIndex<GenericKey<16>, ItemPointer *,
+                  FastGenericComparator<16>,
+                  GenericEqualityChecker<16>, GenericHasher<16>,
+                  ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<GenericKey<64>, ItemPointer *,
+                  FastGenericComparator<64>,
+                  GenericEqualityChecker<64>, GenericHasher<64>,
+                  ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<GenericKey<256>, ItemPointer *,
+                  FastGenericComparator<256>,
+                  GenericEqualityChecker<256>, GenericHasher<256>,
+                  ItemPointerComparator, ItemPointerHashFunc>;
 
 // Tuple key
-template class BWTreeIndex<TupleKey, ItemPointer *, TupleKeyComparator,
-                           TupleKeyEqualityChecker, TupleKeyHasher,
-                           ItemPointerComparator, ItemPointerHashFunc>;
+template
+class BWTreeIndex<TupleKey, ItemPointer *, TupleKeyComparator,
+                  TupleKeyEqualityChecker, TupleKeyHasher,
+                  ItemPointerComparator, ItemPointerHashFunc>;
 
 }  // End index namespace
 }  // End peloton namespace

@@ -181,7 +181,7 @@ namespace peloton {
        * Given a node, find the first non-footer node to its right that is not
        * deleted return null if no such node
        */
-      BaseNode* get_right_undeleted_node(const BaseNode *current) {
+      BaseNode* get_right_undeleted_node(BaseNode *current) {
         assert(current != nullptr);  // should never pass in a null pointer
         assert(current->get_right_node() != nullptr);  // a header/inner/leaf always have right pointer
 
