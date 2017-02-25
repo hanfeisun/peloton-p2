@@ -80,7 +80,9 @@ public:
     }
   }
 
-  ~SkipList();
+  ~SkipList() {
+
+  }
 
   bool insert_key(const KeyType &key, const ValueType &value);
   bool delete_key(const KeyType &key, const ValueType &value);
@@ -241,5 +243,6 @@ public:
   }
 
 };  // End skiplist class
+
 }  // End index namespace
 }  // End peloton namespace
