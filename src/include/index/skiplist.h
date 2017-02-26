@@ -163,6 +163,23 @@ namespace peloton {
         return;
       }
 
+      using KeyValuePair = std::pair<KeyType, ValueType>;
+
+      BaseNode* begin() {
+        BaseNode *start = header[SKIPLIST_MAX_LEVEL-1];
+        return get_right_undeleted_node(start);
+      }
+
+      BaseNode* begin(KeyType& lowKey) {
+        BaseNode *start = search_key(lowKey, 0, find_gte);
+        return start;
+      }
+
+      BaseNode* next(BaseNode *current) {
+        return get_right_undeleted_node(current);
+      }
+
+
       // This gives a hint on whether GC is needed on the index
       // For those that do not need GC this always return false
       bool NeedGC() { return false;}  // TODO: add need gc check
@@ -289,6 +306,8 @@ namespace peloton {
         assert(false);  // control should never reach here
         return nullptr;
       }
+
+
 
       int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
 
