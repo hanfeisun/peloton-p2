@@ -30,7 +30,7 @@ namespace peloton {
   template <typename KeyType, typename ValueType, typename KeyComparator, \
             typename KeyEqualityChecker, typename ValueEqualityChecker>
 
-#define SKIPLIST_MAX_LEVEL 15 // binary 1111, this value should not be changed.
+#define SKIPLIST_MAX_LEVEL 16
 
     SKIPLIST_TEMPLATE_ARGUMENTS
     class SkipList {
@@ -71,6 +71,11 @@ namespace peloton {
         value_eq_obj{p_value_eq_obj},
         supportDupKey{allowDupKey} {
 
+        /*
+         * Initialize header and footer. Every inner data node and
+         * leaf node is contained in between the header and footer
+         * of the same level
+         */
         for (short i = 0; i < SKIPLIST_MAX_LEVEL; ++i) {
           BaseNode *h_node = new BaseNode(NodeType::HeaderNode, i);
           BaseNode *f_node = new BaseNode(NodeType::FooterNode, i);
@@ -83,23 +88,37 @@ namespace peloton {
           header.push_back(h_node);
           footer.push_back(f_node);
         }
-
         std::srand(std::time(0));  //  seed random number generator
       }
 
       ~SkipList() {}
 
+      /*
+       * Insert key into skip list
+       * If key exists and supportDupKey == false then return false
+       * else on each level, find the desired position to insert the
+       * key using CAS. repeat until insertion succeed
+       */
+      bool insert(const KeyType &key, const ValueType &value) {
 
-      bool insert_key(const KeyType &key, const ValueType &value) {
+        // if not support duplicate key and key exists
+        if (!supportDupKey) {
+          BaseNode *found = search_key(key, 0, find_equal);
+          if ( found != nullptr && !(found->is_deleted())) return false;
+        }
+
+        // insert from level 0 up until maxLevel
+        // max level will be in range [0, 15] inclusive
         int maxLevel = generateLevel();
         std::vector<BaseNode *> nodes;
 
-        for (int i = 0; i < maxLevel; i++) {
+        // bottom up insertion, contrasting top-down deletion
+        for (int i = 0; i <= maxLevel; i++) {
 
           NodeType curType = i > 0 ? NodeType::InnerDataNode : NodeType :: LeafDataNode;
           BaseNode *node = new BaseNode(curType, i, key, value);  // todo: get memory from mem pool
           if (i > 0) {
-            node -> down = nodes[i-1];
+            node -> down = nodes[i - 1];
           }
           else {
             node -> down = nullptr;
@@ -108,8 +127,9 @@ namespace peloton {
 
           while (true) {
             BaseNode *prev = level_find_insert_pos(key, i);
-            node -> right = prev -> right;
-            uint64_t nextAdder = reinterpret_cast<uint64_t>(prev->right);
+            node -> right = prev -> get_right_node();
+
+            uint64_t nextAdder = reinterpret_cast<uint64_t>(prev->get_right_node());
             nextAdder = nextAdder & (~0x1);  // set last bit to 0
             BaseNode *ptrValue = reinterpret_cast<BaseNode*>(nextAdder);
 
@@ -121,7 +141,9 @@ namespace peloton {
         return true;
       }
 
-      bool delete_key(const KeyType &key, const ValueType &value) {return false;}
+      bool delete_key(const KeyType &key, const ValueType &value) {
+        return false;
+      }
 
       void GetValue(const KeyType &key, std::vector<ValueType> &value_list) {
         BaseNode *found = search_key(key, 0, find_equal);
@@ -156,17 +178,17 @@ namespace peloton {
       bool supportDupKey;  //  whether or not support duplicate key in skiplist
 
       /*
-       * Given a node, find the first node to its right that is not deleted
-       * return null if no such node
+       * Given a node, find the first non-footer node to its right that is not
+       * deleted return null if no such node
        */
       BaseNode* get_right_undeleted_node(const BaseNode *current) {
         assert(current != nullptr);  // should never pass in a null pointer
-        assert(current->right != nullptr);  // a inner/leaf always have right pointer
+        assert(current->get_right_node() != nullptr);  // a header/inner/leaf always have right pointer
 
-        BaseNode *next = current->right;
+        BaseNode *next = current->get_right_node();
 
         while (next->is_deleted() && next->node_type != NodeType::FooterNode) {
-          next = next -> right;
+          next = next -> get_right_node();
         }
 
         if (next->node_type == NodeType::FooterNode || next->is_deleted()) {
@@ -178,7 +200,7 @@ namespace peloton {
       }
 
       /*
-       * search_key() - Given a search key, return the node at stop_level, given the find_mode
+       * search_key() - Given a key, return the node at stop_level, given the find_mode
        *                if no such key exists, return nullptr
        *
        * If the search_mode is find_prev, then return the largest node with key < search key
@@ -187,7 +209,7 @@ namespace peloton {
        *
        */
       BaseNode* search_key(const KeyType &key, int stop_level, int search_mode) {
-        assert(stop_level > stop_level && stop_level <= SKIPLIST_MAX_LEVEL);
+        assert(stop_level >= 0 && stop_level < SKIPLIST_MAX_LEVEL);  // 0~15 inclusive
 
         int current_level = SKIPLIST_MAX_LEVEL;
         BaseNode *current_node = header[SKIPLIST_MAX_LEVEL - 1];
@@ -262,7 +284,7 @@ namespace peloton {
         return nullptr;
       }
 
-      int generateLevel() { return std::rand() & SKIPLIST_MAX_LEVEL; }
+      int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
 
       /*
        * Given a key and level number, return the node in this after
@@ -270,7 +292,7 @@ namespace peloton {
        */
       BaseNode* level_find_insert_pos(const KeyType &key, int level) {
 
-        assert(level >= 0 && level <= SKIPLIST_MAX_LEVEL);
+        assert(level >= 0 && level < SKIPLIST_MAX_LEVEL);
         BaseNode *prev = search_key(key, level, find_prev);
         if (prev == nullptr) {
           return header[level];
