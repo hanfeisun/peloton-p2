@@ -172,7 +172,13 @@ namespace peloton {
       void PerformGC() { return; }  // TODO: add perform gc
 
 
-    private:
+      /*
+         * KeyCmpLessEqual() - Compare a pair of keys for <= relation
+         */
+      inline bool KeyCmpLessEqual(const KeyType &key1, const KeyType &key2) const {
+        return !KeyCmpGreater(key1, key2);
+      }
+     private:
       std::vector<BaseNode *> header;
       std::vector<BaseNode *> footer;
       bool supportDupKey;  //  whether or not support duplicate key in skiplist
@@ -393,13 +399,6 @@ namespace peloton {
        */
       inline bool KeyCmpGreater(const KeyType &key1, const KeyType &key2) const {
         return KeyCmpLess(key2, key1);
-      }
-
-      /*
-       * KeyCmpLessEqual() - Compare a pair of keys for <= relation
-       */
-      inline bool KeyCmpLessEqual(const KeyType &key1, const KeyType &key2) const {
-        return !KeyCmpGreater(key1, key2);
       }
 
       /////////////////////////////

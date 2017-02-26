@@ -26,31 +26,11 @@ namespace test {
 
 class SkipListIndexTests : public PelotonTest {};
 
-TEST_F(SkipListIndexTests, SkipListStructure) {
-  using namespace peloton::index;
-
-  auto skipList = new SkipList<CompactIntsKey<1>, ItemPointer *,
-                               CompactIntsComparator<1>, CompactIntsEqualityChecker<1>,
-                               ItemPointerComparator>();
-
-  CompactIntsKey<1> key = CompactIntsKey<1>();
-
-  key.AddInteger<int8_t>(1, 0);
-
-  ItemPointer *mock = new ItemPointer();
-
-  skipList->insert(key, mock);
-
-  EXPECT_EQ(2, 1+1);
-
-
-}
-
 //TEST_F(SkipListIndexTests, BasicTest) {
 //  TestingIndexUtil::BasicTest(IndexType::SKIPLIST);
-
-//}
 //
+//}
+
 //TEST_F(SkipListIndexTests, MultiMapInsertTest) {
 //  TestingIndexUtil::MultiMapInsertTest(IndexType::SKIPLIST);
 //}

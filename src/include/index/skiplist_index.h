@@ -91,6 +91,7 @@ class SkipListIndex : public Index {
   // equality checker and comparator
   KeyComparator comparator;
   KeyEqualityChecker equals;
+  ValueEqualityChecker value_equals;
 
   // container
   MapType container;
