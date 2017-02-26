@@ -111,35 +111,77 @@ public:
    *
    */
   BaseNode* search_key(const KeyType &search_key, int search_mode) {
-//    int current_level = SKIPLIST_MAX_LEVEL;
-//    BaseNode *current_node = header[SKIPLIST_MAX_LEVEL - 1];
-//
-//    // loop invariant:
-//    // 1). current_level non-negative
-//    // 2). current_node is not deleted
-//    // 3). current_node.key < search_key
-//    while (current_level >= 0) {
-//      if (current_node->right->GetType() == NodeType::FooterNode) {
-//        if (current_level == 0) {
-//          return nullptr;
-//        } else {
-//          current_level--;
-//          current_node = current_node->down;
-//        }
-//      } else {  // right node is data node
-//
-//        if (key_cmp_obj(current_node->right->node_key, search_key)) {
-//          current_node = current_node->right;
-//        } else {
-//          if (current_level == 0) {
-//            return current_node->right;
-//          } else {
-//            current_level--;
-//            current_node = current_node->down;
-//          }
-//        }
-//      }
-//    }
+    int current_level = SKIPLIST_MAX_LEVEL;
+    BaseNode *current_node = header[SKIPLIST_MAX_LEVEL - 1];
+    BaseNode *current_right;
+
+    // loop invariant:
+    // 1). current_level non-negative
+    // 2). current_node is not deleted
+    // 3). current_node.key < search_key
+    while (current_level >= 0) {
+
+      current_right = get_right_undeleted_node(current_node);
+
+      // no node that is undeleted and to the right of current node
+      if (current_right == nullptr) {
+        //  bottom level, search ends
+        if (current_level == 0) {
+          return search_mode == find_prev && !current_node->is_header_node() ? current_node : nullptr;
+        } else {
+          current_level--;
+          current_node = current_node->down;
+        }
+      }
+      else {
+
+        // current right < search key, safe to move there
+        if (KeyCmpLess(current_right->node_key, search_key)) {
+          current_node = current_right;
+
+        } // end if current right < search key
+
+        else
+        // current right == key
+        if (KeyCmpEqual(current_right->node_key, search_key)) {
+
+          if (current_level == 0) {
+            if (search_mode == find_equal || search_mode == find_gte) {
+              return current_right;
+            }
+            else { return current_node->is_header_node()? nullptr : current_node ; }
+          }
+          else {
+
+            if (search_mode == find_equal || search_mode == find_gte) {
+              current_node = current_right;
+              while (current_node->down != nullptr) { current_node = current_node->down; }
+              return current_node;
+            }
+            else{
+              current_level--;
+              current_node = current_node->down;
+            }
+          }
+        }
+          // current right larger than search key
+        else {
+
+          if (current_level == 0) {
+            if (search_mode == find_equal) { return nullptr; }
+            if (search_mode == find_gte) { return current_right; }
+            return current_node->is_header_node()? nullptr : current_node;
+          }
+          else {
+            current_level --;
+            current_node = current_node->down;
+          }
+
+        }
+
+      }
+
+    }
     return nullptr;
   }
 
@@ -193,6 +235,14 @@ public:
 
     BaseNode *get_right_node() {
       return reinterpret_cast<BaseNode*>(reinterpret_cast<uint64_t>(right) & ~0x1);
+    }
+
+    bool is_header_node() {
+      return this->node_type == NodeType :: HeaderNode;
+    }
+
+    bool is_footer_node() {
+      return this->node_type == NodeType :: FooterNode;
     }
 
     BaseNode(NodeType node_type,
