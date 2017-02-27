@@ -148,9 +148,9 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // If it is a full index scan, then just do the scan
     // until we have reached the end of the index by the same
     // we take the snapshot of the last leaf node
-    for (auto scan_itr = container.Begin(); (scan_itr.IsEnd() == false);
+    for (auto scan_itr = container.begin(); (scan_itr != nullptr);
          scan_itr++) {
-      result.push_back(scan_itr->second);
+      result.push_back(scan_itr->item_value);
     }  // for it from begin() to end()
   } else {
     const storage::Tuple *low_key_p = csp_p->GetLowKey();
@@ -171,8 +171,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // Also we keep scanning until we have reached the end of the index
     // or we have seen a key higher than the high key
     for (auto cursor = container.begin(index_low_key);
-         (cursor != nullptr) &&
-             (container.KeyCmpLessEqual(cursor->item_value, index_high_key));
+         (cursor != nullptr) && (container.KeyCmpLessEqual(cursor->node_key, index_high_key));
          cursor++) {
       result.push_back(cursor->item_value);
     }
@@ -224,7 +223,7 @@ void SKIPLIST_INDEX_TYPE::ScanLimit(
 
     auto scan_itr = container.begin(index_low_key);
     if ((scan_itr != nullptr) &&
-        (container.KeyCmpLessEqual(scan_itr->item_value, index_high_key))) {
+        (container.KeyCmpLessEqual(scan_itr->node_key, index_high_key))) {
 
       result.push_back(scan_itr->item_value);
     }

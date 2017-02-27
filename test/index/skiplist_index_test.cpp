@@ -26,10 +26,10 @@ namespace test {
 
 class SkipListIndexTests : public PelotonTest {};
 
-//TEST_F(SkipListIndexTests, BasicTest) {
-//  TestingIndexUtil::BasicTest(IndexType::SKIPLIST);
-//
-//}
+TEST_F(SkipListIndexTests, BasicTest) {
+  TestingIndexUtil::BasicTest(IndexType::SKIPLIST);
+
+}
 
 //TEST_F(SkipListIndexTests, MultiMapInsertTest) {
 //  TestingIndexUtil::MultiMapInsertTest(IndexType::SKIPLIST);
