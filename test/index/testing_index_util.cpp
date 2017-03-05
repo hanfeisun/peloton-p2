@@ -314,21 +314,21 @@ void TestingIndexUtil::UniqueKeyMultiThreadedTest(const IndexType index_type) {
   // FORWARD SCAN
   index->ScanTest({key1_val0}, {0}, {ExpressionType::COMPARE_EQUAL},
                   ScanDirectionType::FORWARD, location_ptrs);
-  EXPECT_EQ(location_ptrs.size(), 0);
+  EXPECT_EQ(location_ptrs.size(), 1);
   location_ptrs.clear();
 
   index->ScanTest(
       {key1_val0, key1_val1}, {0, 1},
       {ExpressionType::COMPARE_EQUAL, ExpressionType::COMPARE_EQUAL},
       ScanDirectionType::FORWARD, location_ptrs);
-  EXPECT_EQ(location_ptrs.size(), 0);
+  EXPECT_EQ(location_ptrs.size(), 1);
   location_ptrs.clear();
 
   index->ScanTest(
       {key1_val0, key1_val1}, {0, 1},
       {ExpressionType::COMPARE_EQUAL, ExpressionType::COMPARE_GREATERTHAN},
       ScanDirectionType::FORWARD, location_ptrs);
-  EXPECT_EQ(location_ptrs.size(), 0);
+  EXPECT_EQ(location_ptrs.size(), 1);
   location_ptrs.clear();
 
   index->ScanTest(

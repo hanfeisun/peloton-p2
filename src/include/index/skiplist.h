@@ -18,6 +18,9 @@
 #include <assert.h>
 #include <cstdlib>
 #include <ctime>
+#include "common/logger.h"
+#include <sstream>
+
 
 namespace peloton {
   namespace index {
@@ -100,19 +103,44 @@ namespace peloton {
        * key using CAS. repeat until insertion succeed
        */
       bool insert(const KeyType &key, const ValueType &value) {
+
+        std::ostringstream ss;
+        ss << std::this_thread::get_id();
+        std::string idstr = ss.str();
+
+        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
+        printSkipListStructure();  // todo: need to remove this
+
         // if not support duplicate key and key exists
         if (!supportDupKey) {
           BaseNode *found = search_key(key, 0, find_equal);
-          if (found != nullptr && !(found->is_deleted())) return false;
+          if (found != nullptr && !(found->is_deleted())) {
+            LOG_DEBUG("dup found. Refuse insertion\n");  // todo: need to remove this
+            return false;
+          }
         }
+        else{
+          // check (key,value) pair already exists
+          BaseNode *found = search_key(key, 0, find_equal);
+          if (found != nullptr) {
+            while(!(found->is_footer_node()) && KeyCmpEqual(found->node_key, key)) {
+              if (ValueCmpEqual(found->item_value, value)) return false;
+              found = found->get_right_node();
+            }
+          }
+        }
+
 
         // insert from level 0 up until maxLevel
         // max level will be in range [0, 15] inclusive
         int maxLevel = generateLevel();
+//        LOG_DEBUG("insert level is %d\n", maxLevel);  // todo: need to remove this
         std::vector<BaseNode *> nodes;
 
         // bottom up insertion, contrasting top-down deletion
         for (int i = 0; i <= maxLevel; i++) {
+//          LOG_DEBUG("inserting on level %d\n", i);  // todo: need to remove this
+
           NodeType curType = NodeType::LeafDataNode;
           if (i > 0) {
             curType = NodeType::InnerDataNode;
@@ -131,19 +159,48 @@ namespace peloton {
 
           nodes.push_back(node);
 
+//          LOG_DEBUG("CAS on level %d\n", i);  // todo: need to remove this
+
           /*
            * on current level, start insert node. Keep trying until
            * CAS succeeds
            */
           while (true) {
             BaseNode *prev = level_find_insert_pos(key, i);
+
+            //test code below, just checking  //todo: improve this
+
+
+            if (!supportDupKey) {
+              BaseNode *dada = prev->get_right_node();
+              if (!(dada->is_footer_node()) && KeyCmpEqual(dada->node_key, key) && !(dada->is_deleted())) {
+                return false;
+              }
+            }
+            else{
+              // check (key,value) pair already exists
+              BaseNode *dada = prev->get_right_node();
+              if (dada != nullptr) {
+                while(!(dada->is_footer_node()) && KeyCmpEqual(dada->node_key, key)) {
+                  if (ValueCmpEqual(dada->item_value, value) && !(dada->is_deleted())) return false;
+                  dada = dada->get_right_node();
+                }
+              }
+            }
+
+//            LOG_DEBUG("find pos done\n");  // todo: need to remove this
             BaseNode *ptrValue  = prev->get_right_node();
+//            LOG_DEBUG("get right done\n");  // todo: need to remove this
             node->right = ptrValue;
+//            LOG_DEBUG("right assign done done\n");  // todo: need to remove this
             if (__sync_bool_compare_and_swap(&(prev->right), ptrValue, node)) {
+//              LOG_DEBUG("CAS SUCCESS\n");  // todo: need to remove this
               break;
             }
           }
         }
+        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
+        printSkipListStructure();  // todo: need to remove this
         return true;
       }
 
@@ -154,7 +211,7 @@ namespace peloton {
 
         while (!ValueCmpEqual(found->item_value, value)) {
           found = get_right_undeleted_node(found);
-          if (found == nullptr || !KeyCmpEqual(found->node_key, key)) return false;
+          if (found == nullptr || found->is_footer_node() || !KeyCmpEqual(found->node_key, key)) return false;
         }
 
         // control reaches here, then we are sure that found == node needs deleting
@@ -193,26 +250,31 @@ namespace peloton {
       }
 
       void GetValue(const KeyType &key, std::vector<ValueType> &value_list) {
+        LOG_DEBUG("GetValue()");
+//        printSkipListStructure();
         BaseNode *found = search_key(key, 0, find_equal);
         if (found != nullptr) {
+          LOG_DEBUG("pushing back");
           value_list.push_back(found->item_value);
           while (true) {
             BaseNode *nextNode = get_right_undeleted_node(found);
             if (nextNode != nullptr && KeyCmpEqual(nextNode->node_key, key)) {
               found = nextNode;
+              LOG_DEBUG("pushing back in while");
               value_list.push_back(found->item_value);
             } else {
               break;
             }
           }
         }
+        LOG_DEBUG("find returning with size %lu", value_list.size());
         return;
       }
 
       using KeyValuePair = std::pair<KeyType, ValueType>;
 
       BaseNode* begin() {
-        BaseNode *start = header[SKIPLIST_MAX_LEVEL-1];
+        BaseNode *start = header[0];
         return get_right_undeleted_node(start);
       }
 
@@ -241,7 +303,7 @@ namespace peloton {
       inline bool KeyCmpLessEqual(const KeyType &key1, const KeyType &key2) const {
         return !KeyCmpGreater(key1, key2);
       }
-     private:
+    private:
       std::vector<BaseNode *> header;
       std::vector<BaseNode *> footer;
       bool supportDupKey;  //  whether or not support duplicate key in skiplist
@@ -330,7 +392,7 @@ namespace peloton {
                 if (search_mode == find_equal || search_mode == find_greater_equal) {
                   current_node = current_right;
                   int startLevel = current_level;
-                  while (startLevel >= stop_level) {
+                  while (startLevel > stop_level) {
                     current_node = current_node->down;
                     startLevel--;
                   }
@@ -377,7 +439,8 @@ namespace peloton {
       }
 
 
-      int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
+      int generateLevel() { return 0; }
+//      int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
 
       /*
        * Given a key and level number, return the node in this after
@@ -494,6 +557,23 @@ namespace peloton {
        */
       inline bool ValueCmpEqual(const ValueType &v1, const ValueType &v2) {
         return value_eq_obj(v1, v2);
+      }
+
+      void printSkipListStructure() {
+        for (int i = SKIPLIST_MAX_LEVEL - 1; i >= 0; i--) {
+          BaseNode *node = header[i];
+          std::string output("Level ");
+          output = output + std::to_string(i) + "-->";
+
+          node = node->get_right_node();
+          while (!node->is_footer_node()) {
+            output = output + std::string("a key") + "-->";
+            node = node->get_right_node();
+          }
+
+          output = output + "END";
+          LOG_DEBUG("%s\n", output.c_str());
+        }
       }
 
     };  // End skiplist class

@@ -31,7 +31,7 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
     // value equality checker
     value_equals{},
     // TODO: Support allowDupKey
-    container{comparator, equals, value_equals, false} {
+    container{comparator, equals, value_equals, !(metadata->HasUniqueKeys())} {
 
   return;
 }
@@ -94,10 +94,12 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
   // This function in BwTree fills a given vector
   container.GetValue(index_key, result);
 
-  if (FLAGS_stats_mode != STATS_TYPE_INVALID) {
-    stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
-        result.size(), metadata);
-  }
+//  if (FLAGS_stats_mode != STATS_TYPE_INVALID) {
+//    stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
+//        result.size(), metadata);
+//  }
+
+  LOG_DEBUG("skiplist_index ScanKey() returning with size %lu\n", result.size());
 
   return;
 }
@@ -172,7 +174,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // or we have seen a key higher than the high key
     for (auto cursor = container.begin(index_low_key);
          (cursor != nullptr) && (container.KeyCmpLessEqual(cursor->node_key, index_high_key));
-         cursor++) {
+         cursor = cursor->get_right_node()) {
       result.push_back(cursor->item_value);
     }
   }  // if is full scan
@@ -247,6 +249,9 @@ void SKIPLIST_INDEX_TYPE::ScanAllKeys(
     stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
         result.size(), metadata);
   }
+
+  LOG_DEBUG("skiplist_index ScanAllKeys() returning with size %lu\n", result.size());
+
   return;
 }
 
