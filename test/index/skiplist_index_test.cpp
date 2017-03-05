@@ -67,5 +67,9 @@ TEST_F(SkipListIndexTests, NonUniqueKeyMultiThreadedStressTest2) {
   TestingIndexUtil::NonUniqueKeyMultiThreadedStressTest2(IndexType::SKIPLIST);
 }
 
+TEST_F(SkipListIndexTests, ScanLimitTest) {
+  TestingIndexUtil::ScanLimitTest(IndexType::SKIPLIST);
+}
+
 }  // End test namespace
 }  // End peloton namespace

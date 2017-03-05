@@ -50,6 +50,8 @@ class TestingIndexUtil {
 
   static void NonUniqueKeyMultiThreadedStressTest2(const IndexType index_type);
 
+  static void ScanLimitTest(const IndexType index_type);
+
   //===--------------------------------------------------------------------===//
   // Utility Methods
   //===--------------------------------------------------------------------===//

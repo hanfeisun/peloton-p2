@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <include/index/scan_optimizer.h>
 #include "index/testing_index_util.h"
 
 #include "gtest/gtest.h"
@@ -640,7 +641,6 @@ void TestingIndexUtil::NonUniqueKeyMultiThreadedStressTest2(const IndexType inde
   delete index->GetMetadata()->GetTupleSchema();
 }
 
-
 index::Index *TestingIndexUtil::BuildIndex(const IndexType index_type,
                                            const bool unique_keys) {
   LOG_DEBUG("Build index type: %s", IndexTypeToString(index_type).c_str());
@@ -720,8 +720,8 @@ index::Index *TestingIndexUtil::BuildIndex(const IndexType index_type,
 }
 
 void TestingIndexUtil::InsertHelper(index::Index *index, type::AbstractPool *pool,
-                                  size_t scale_factor,
-                                  UNUSED_ATTRIBUTE uint64_t thread_itr) {
+                                    size_t scale_factor,
+                                    UNUSED_ATTRIBUTE uint64_t thread_itr) {
   const catalog::Schema *key_schema = index->GetKeySchema();
 
   // Loop based on scale factor
@@ -782,8 +782,8 @@ void TestingIndexUtil::InsertHelper(index::Index *index, type::AbstractPool *poo
 
 // DELETE HELPER FUNCTION
 void TestingIndexUtil::DeleteHelper(index::Index *index, type::AbstractPool *pool,
-                                  size_t scale_factor,
-                                  UNUSED_ATTRIBUTE uint64_t thread_itr) {
+                                    size_t scale_factor,
+                                    UNUSED_ATTRIBUTE uint64_t thread_itr) {
   const catalog::Schema *key_schema = index->GetKeySchema();
 
   // Loop based on scale factor
@@ -838,5 +838,83 @@ void TestingIndexUtil::DeleteHelper(index::Index *index, type::AbstractPool *poo
   }
 }
 
+void TestingIndexUtil::ScanLimitTest(const IndexType index_type) {
+  auto pool = TestingHarness::GetInstance().GetTestingPool();
+  std::vector<ItemPointer *> location_ptrs;
+
+  // INDEX
+  std::unique_ptr<index::Index> index(
+      TestingIndexUtil::BuildIndex(index_type, false));
+  const catalog::Schema *key_schema = index->GetKeySchema();
+
+  // Single threaded test
+  size_t scale_factor = 1;
+  LaunchParallelTest(1, TestingIndexUtil::InsertHelper, index.get(), pool,
+                     scale_factor);
+
+  std::unique_ptr<storage::Tuple> key0(new storage::Tuple(key_schema, true));
+  std::unique_ptr<storage::Tuple> key1(new storage::Tuple(key_schema, true));
+  std::unique_ptr<storage::Tuple> key2(new storage::Tuple(key_schema, true));
+  std::unique_ptr<storage::Tuple> key4(new storage::Tuple(key_schema, true));
+
+  key0->SetValue(0, type::ValueFactory::GetIntegerValue(100), pool);
+  key0->SetValue(1, type::ValueFactory::GetVarcharValue("a"), pool);
+
+  type::Value key0_val0 = (key0->GetValue(0));
+  type::Value key0_val1 = (key0->GetValue(1));
+  type::Value key1_val0 = (key1->GetValue(0));
+  type::Value key1_val1 = (key1->GetValue(1));
+  type::Value key2_val0 = (key2->GetValue(0));
+  type::Value key2_val1 = (key2->GetValue(1));
+
+  peloton::index::IndexScanPredicate isp{};
+  isp.AddConjunctionScanPredicate(index.get(), {key0_val0}, {0},
+                                  {ExpressionType::COMPARE_EQUAL});
+  index->Scan({}, {}, {}, ScanDirectionType::FORWARD, location_ptrs,
+              &isp.GetConjunctionList()[0]);
+
+  EXPECT_EQ(location_ptrs.size(), 5);
+  location_ptrs.clear();
+
+  index->ScanLimit({}, {}, {}, ScanDirectionType::FORWARD, location_ptrs,
+                   &isp.GetConjunctionList()[0], 2, 0);
+
+  EXPECT_EQ(location_ptrs.size(), 2);
+  location_ptrs.clear();
+
+  index->ScanLimit({}, {}, {}, ScanDirectionType::FORWARD, location_ptrs,
+                   &isp.GetConjunctionList()[0], 100, 0);
+
+  EXPECT_EQ(location_ptrs.size(), 5);
+  location_ptrs.clear();
+
+  index->ScanLimit({}, {}, {}, ScanDirectionType::FORWARD, location_ptrs,
+                   &isp.GetConjunctionList()[0], 0, 100);
+
+  EXPECT_EQ(location_ptrs.size(), 0);
+  location_ptrs.clear();
+
+  peloton::index::IndexScanPredicate isp2{};
+  isp2.AddConjunctionScanPredicate(index.get(), {key0_val0}, {0},
+                                   {ExpressionType::COMPARE_GREATERTHANOREQUALTO});
+
+  index->ScanLimit({}, {}, {}, ScanDirectionType::FORWARD, location_ptrs,
+                   &isp.GetConjunctionList()[0], 0, 100);
+
+  std::vector<ItemPointer *> location_ptrs2;
+  index->ScanLimit({}, {}, {}, ScanDirectionType::BACKWARD, location_ptrs2,
+                   &isp.GetConjunctionList()[0], 0, 100);
+
+  EXPECT_EQ(location_ptrs.size(), location_ptrs2.size());
+
+  for (size_t i = 0; i < location_ptrs.size(); i++) {
+    EXPECT_EQ(location_ptrs.at(i), location_ptrs2.at(location_ptrs2.size() - i));
+  }
+
+  location_ptrs.clear();
+  location_ptrs2.clear();
+
+  delete index->GetMetadata()->GetTupleSchema();
+}
 }  // namespace test
 }  // namespace peloton

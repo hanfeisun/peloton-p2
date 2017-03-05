@@ -30,7 +30,6 @@ SKIPLIST_INDEX_TYPE::SkipListIndex(IndexMetadata *metadata)
     equals{},
     // value equality checker
     value_equals{},
-    // TODO: Support allowDupKey
     container{comparator, equals, value_equals, !(metadata->HasUniqueKeys())} {
 
   return;
@@ -104,8 +103,6 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
   return;
 }
 
-
-
 SKIPLIST_TEMPLATE_ARGUMENTS
 bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
     UNUSED_ATTRIBUTE const storage::Tuple *key,
@@ -127,7 +124,6 @@ void SKIPLIST_INDEX_TYPE::Scan(
     UNUSED_ATTRIBUTE ScanDirectionType scan_direction,
     UNUSED_ATTRIBUTE std::vector<ValueType> &result,
     UNUSED_ATTRIBUTE const ConjunctionScanPredicate *csp_p) {
-  // This is a hack - we do not support backward scan
   if (scan_direction == ScanDirectionType::INVALID) {
     throw Exception("Invalid scan direction \n");
   }
@@ -184,7 +180,9 @@ void SKIPLIST_INDEX_TYPE::Scan(
         result.size(), metadata);
   }
 
-  return;
+  if (scan_direction == ScanDirectionType::BACKWARD) {
+    std::reverse(result.begin(), result.end());
+  }
 
   return;
 }
@@ -198,40 +196,32 @@ void SKIPLIST_INDEX_TYPE::ScanLimit(
     UNUSED_ATTRIBUTE const std::vector<type::Value> &value_list,
     UNUSED_ATTRIBUTE const std::vector<oid_t> &tuple_column_id_list,
     UNUSED_ATTRIBUTE const std::vector<ExpressionType> &expr_list,
-    UNUSED_ATTRIBUTE ScanDirectionType scan_direction,
-    UNUSED_ATTRIBUTE std::vector<ValueType> &result,
-    UNUSED_ATTRIBUTE const ConjunctionScanPredicate *csp_p,
-    UNUSED_ATTRIBUTE uint64_t limit, UNUSED_ATTRIBUTE uint64_t offset) {
+    ScanDirectionType scan_direction,
+    std::vector<ValueType> &result,
+    const ConjunctionScanPredicate *csp_p,
+    uint64_t limit,
+    uint64_t offset) {
   // Only work with limit == 1 and offset == 0
   // Because that gets translated to "min"
   // But still since we could not access tuples in the table
   // the index just fetches the first qualified key without further checking
   // including checking for non-exact bounds!!!
 
-  // TODO: support BACKWARD
-  // TODO: support offset
-  if (csp_p->IsPointQuery() == false && limit == 1 && offset == 0 &&
-      scan_direction == ScanDirectionType::FORWARD) {
-    const storage::Tuple *low_key_p = csp_p->GetLowKey();
-    const storage::Tuple *high_key_p = csp_p->GetHighKey();
 
-    LOG_TRACE("ScanLimit() special case (limit = 1; offset = 0; ASCENDING): %s",
-              low_key_p->GetInfo().c_str());
+  Scan(value_list, tuple_column_id_list, expr_list, scan_direction, result, csp_p);
+  if (scan_direction == ScanDirectionType::INVALID) {
+    throw Exception("Invalid scan direction \n");
+  }
 
-    KeyType index_low_key;
-    KeyType index_high_key;
-    index_low_key.SetFromKey(low_key_p);
-    index_high_key.SetFromKey(high_key_p);
 
-    auto scan_itr = container.begin(index_low_key);
-    if ((scan_itr != nullptr) &&
-        (container.KeyCmpLessEqual(scan_itr->node_key, index_high_key))) {
-
-      result.push_back(scan_itr->item_value);
-    }
+  if (result.size() >= offset) {
+    result.erase(result.begin(), result.begin() + offset);
   } else {
-    Scan(value_list, tuple_column_id_list, expr_list, scan_direction, result,
-         csp_p);
+    result.erase(result.begin(), result.end());
+  }
+
+  if (result.size() >= limit) {
+    result.erase(result.begin() + limit, result.end());
   }
 
   return;
@@ -241,7 +231,7 @@ SKIPLIST_TEMPLATE_ARGUMENTS
 void SKIPLIST_INDEX_TYPE::ScanAllKeys(
     UNUSED_ATTRIBUTE std::vector<ValueType> &result) {
   auto cursor = container.begin();
-  while(cursor != nullptr) {
+  while (cursor != nullptr) {
     result.push_back(cursor->item_value);
     cursor = container.next(cursor);
   }
@@ -254,7 +244,6 @@ void SKIPLIST_INDEX_TYPE::ScanAllKeys(
 
   return;
 }
-
 
 SKIPLIST_TEMPLATE_ARGUMENTS
 std::string SKIPLIST_INDEX_TYPE::GetTypeName() const { return "SkipList"; }
