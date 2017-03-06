@@ -105,24 +105,25 @@ namespace peloton {
        */
       bool insert(const KeyType &key, const ValueType &value) {
 
-//        std::ostringstream ss;
-//        ss << std::this_thread::get_id();
-//        std::string idstr = ss.str();
+        std::ostringstream ss;
+        ss << std::this_thread::get_id();
+        std::string idstr = ss.str();
 
-//        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
-//        printSkipListStructure();  // todo: need to remove this
+        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
+        printSkipListStructure();  // todo: need to remove this
 
         // if not support duplicate key and key exists
         if (!supportDupKey) {
           BaseNode *found = search_key(key, 0, find_equal);
           if (found != nullptr && !(found->is_deleted())) {
-//            LOG_DEBUG("dup found. Refuse insertion\n");  // todo: need to remove this
+            LOG_DEBUG("dup found. Refuse insertion\n");  // todo: need to remove this
             return false;
           }
         }
         else{
           // check (key,value) pair already exists
           BaseNode *found = search_key(key, 0, find_equal);
+          LOG_DEBUG("support dup key but not dup key-value pair\n");  // todo: need to remove this
           if (found != nullptr) {
             while(!(found->is_footer_node()) && KeyCmpEqual(found->node_key, key)) {
               if (ValueCmpEqual(found->item_value, value)) return false;
@@ -135,7 +136,7 @@ namespace peloton {
         // insert from level 0 up until maxLevel
         // max level will be in range [0, 15] inclusive
         int maxLevel = generateLevel();
-//        LOG_DEBUG("insert level is %d\n", maxLevel);  // todo: need to remove this
+        LOG_DEBUG("insert level is %d\n", maxLevel);  // todo: need to remove this
         std::vector<BaseNode *> nodes;
 
         // bottom up insertion, contrasting top-down deletion
@@ -200,12 +201,15 @@ namespace peloton {
             }
           }
         }
-//        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
-//        printSkipListStructure();  // todo: need to remove this
+        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
+        printSkipListStructure();  // todo: need to remove this
         return true;
       }
 
       bool delete_key(const KeyType &key, const ValueType &value) {
+
+        LOG_DEBUG("before delete\n");  // todo: need to remove this
+        printSkipListStructure();  // todo: need to remove this
 
         BaseNode *found = search_key(key, 0, find_equal);
         if (found == nullptr) return false;  // no such key
@@ -247,12 +251,15 @@ namespace peloton {
             }
           }
         }
+
+        LOG_DEBUG("after delete\n");  // todo: need to remove this
+        printSkipListStructure();  // todo: need to remove this
         return true;
       }
 
       void GetValue(const KeyType &key, std::vector<ValueType> &value_list) {
-        LOG_DEBUG("GetValue()");
-        printSkipListStructure();
+//        LOG_DEBUG("GetValue()");
+//        printSkipListStructure();
         BaseNode *found = search_key(key, 0, find_equal);
         if (found != nullptr) {
 //          LOG_DEBUG("pushing back");
@@ -390,18 +397,18 @@ namespace peloton {
                 }
               }
               else {
-                if (search_mode == find_equal || search_mode == find_greater_equal) {
-                  current_node = current_right;
-                  int startLevel = current_level;
-                  while (startLevel > stop_level) {
-                    current_node = current_node->down;
-                    startLevel--;
-                  }
-                  return current_node;
-                } else {
+//                if (search_mode == find_equal || search_mode == find_greater_equal) {
+//                  current_node = current_right;
+//                  int startLevel = current_level;
+//                  while (startLevel > stop_level) {
+//                    current_node = current_node->down;
+//                    startLevel--;
+//                  }
+//                  return current_node;
+//                } else {
                   current_level--;
                   current_node = current_node->down;
-                }
+//                }
               }
             }
               // current right larger than search key
@@ -440,6 +447,7 @@ namespace peloton {
       }
 
 
+//      int generateLevel() { return 0; }
       int generateLevel() { return ffs(std::rand() & ((1 << (SKIPLIST_MAX_LEVEL)) - 1)) - 1; }
 //      int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
 
@@ -568,6 +576,12 @@ namespace peloton {
 
           node = node->get_right_node();
           while (!node->is_footer_node()) {
+
+            BaseNode *nn = node->get_right_node();
+            if ((!(nn->is_footer_node())) && KeyCmpGreater(node->node_key, nn->node_key)) {
+              LOG_DEBUG("FUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCK\n");
+            }
+
             output = output + std::string("a key") + "-->";
             node = node->get_right_node();
           }
