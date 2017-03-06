@@ -136,6 +136,8 @@ void SKIPLIST_INDEX_TYPE::Scan(
             csp_p->IsFullIndexScan());
 
   if (csp_p->IsPointQuery() == true) {
+
+    LOG_DEBUG("point query detected");
     const storage::Tuple *point_query_key_p = csp_p->GetPointQueryKey();
 
     KeyType point_query_key;
@@ -151,7 +153,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // until we have reached the end of the index by the same
     // we take the snapshot of the last leaf node
     for (auto scan_itr = container.begin(); (scan_itr != nullptr);
-         scan_itr++) {
+         scan_itr = scan_itr->get_right_node()) {
       result.push_back(scan_itr->item_value);
     }  // for it from begin() to end()
   } else {
@@ -173,7 +175,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // Also we keep scanning until we have reached the end of the index
     // or we have seen a key higher than the high key
     for (auto cursor = container.begin(index_low_key);
-         (cursor != nullptr) && (container.KeyCmpLessEqual(cursor->node_key, index_high_key));
+         (cursor != nullptr) && (!cursor->is_footer_node()) && (container.KeyCmpLessEqual(cursor->node_key, index_high_key));
          cursor = cursor->get_right_node()) {
       result.push_back(cursor->item_value);
     }
