@@ -448,7 +448,11 @@ namespace peloton {
 
 
 //      int generateLevel() { return 0; }
-      int generateLevel() { return ffs(std::rand() & ((1 << (SKIPLIST_MAX_LEVEL)) - 1)) - 1; }
+      int generateLevel() {
+        int bound = (1 << SKIPLIST_MAX_LEVEL) - 1;
+        int random = std::rand() % bound;
+        return ffs(random + 1) - 1;
+      }
 //      int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
 
       /*
