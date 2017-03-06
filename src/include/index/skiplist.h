@@ -20,6 +20,7 @@
 #include <ctime>
 #include "common/logger.h"
 #include <sstream>
+#include <strings.h>
 
 
 namespace peloton {
@@ -104,18 +105,18 @@ namespace peloton {
        */
       bool insert(const KeyType &key, const ValueType &value) {
 
-        std::ostringstream ss;
-        ss << std::this_thread::get_id();
-        std::string idstr = ss.str();
+//        std::ostringstream ss;
+//        ss << std::this_thread::get_id();
+//        std::string idstr = ss.str();
 
-        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
-        printSkipListStructure();  // todo: need to remove this
+//        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
+//        printSkipListStructure();  // todo: need to remove this
 
         // if not support duplicate key and key exists
         if (!supportDupKey) {
           BaseNode *found = search_key(key, 0, find_equal);
           if (found != nullptr && !(found->is_deleted())) {
-            LOG_DEBUG("dup found. Refuse insertion\n");  // todo: need to remove this
+//            LOG_DEBUG("dup found. Refuse insertion\n");  // todo: need to remove this
             return false;
           }
         }
@@ -199,8 +200,8 @@ namespace peloton {
             }
           }
         }
-        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
-        printSkipListStructure();  // todo: need to remove this
+//        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
+//        printSkipListStructure();  // todo: need to remove this
         return true;
       }
 
@@ -251,23 +252,23 @@ namespace peloton {
 
       void GetValue(const KeyType &key, std::vector<ValueType> &value_list) {
         LOG_DEBUG("GetValue()");
-//        printSkipListStructure();
+        printSkipListStructure();
         BaseNode *found = search_key(key, 0, find_equal);
         if (found != nullptr) {
-          LOG_DEBUG("pushing back");
+//          LOG_DEBUG("pushing back");
           value_list.push_back(found->item_value);
           while (true) {
             BaseNode *nextNode = get_right_undeleted_node(found);
             if (nextNode != nullptr && KeyCmpEqual(nextNode->node_key, key)) {
               found = nextNode;
-              LOG_DEBUG("pushing back in while");
+//              LOG_DEBUG("pushing back in while");
               value_list.push_back(found->item_value);
             } else {
               break;
             }
           }
         }
-        LOG_DEBUG("find returning with size %lu", value_list.size());
+//        LOG_DEBUG("find returning with size %lu", value_list.size());
         return;
       }
 
@@ -439,7 +440,7 @@ namespace peloton {
       }
 
 
-      int generateLevel() { return 0; }
+      int generateLevel() { return ffs(std::rand() & ((1 << (SKIPLIST_MAX_LEVEL)) - 1)) - 1; }
 //      int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
 
       /*

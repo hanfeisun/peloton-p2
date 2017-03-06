@@ -322,7 +322,7 @@ void TestingIndexUtil::UniqueKeyMultiThreadedTest(const IndexType index_type) {
       {key1_val0, key1_val1}, {0, 1},
       {ExpressionType::COMPARE_EQUAL, ExpressionType::COMPARE_EQUAL},
       ScanDirectionType::FORWARD, location_ptrs);
-  EXPECT_EQ(location_ptrs.size(), 1);
+  EXPECT_EQ(location_ptrs.size(), 0);
   location_ptrs.clear();
 
   index->ScanTest(
@@ -336,7 +336,7 @@ void TestingIndexUtil::UniqueKeyMultiThreadedTest(const IndexType index_type) {
       {key1_val0, key1_val1}, {0, 1},
       {ExpressionType::COMPARE_GREATERTHAN, ExpressionType::COMPARE_EQUAL},
       ScanDirectionType::FORWARD, location_ptrs);
-  EXPECT_EQ(location_ptrs.size(), 0);
+  EXPECT_EQ(location_ptrs.size(), 1);
   location_ptrs.clear();
 
   delete index->GetMetadata()->GetTupleSchema();

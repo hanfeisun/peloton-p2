@@ -9,7 +9,6 @@
 // Copyright (c) 2015-17, Carnegie Mellon University Database Group
 //
 //===----------------------------------------------------------------------===//
-
 #include "index/skiplist_index.h"
 
 #include "common/logger.h"
@@ -119,12 +118,12 @@ bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
  */
 SKIPLIST_TEMPLATE_ARGUMENTS
 void SKIPLIST_INDEX_TYPE::Scan(
-    const std::vector<type::Value> &value_list,
-    const std::vector<oid_t> &tuple_column_id_list,
-    const std::vector<ExpressionType> &expr_list,
-    ScanDirectionType scan_direction,
-    std::vector<ValueType> &result,
-    const ConjunctionScanPredicate *csp_p) {
+    UNUSED_ATTRIBUTE const std::vector<type::Value> &value_list,
+    UNUSED_ATTRIBUTE const std::vector<oid_t> &tuple_column_id_list,
+    UNUSED_ATTRIBUTE const std::vector<ExpressionType> &expr_list,
+    UNUSED_ATTRIBUTE ScanDirectionType scan_direction,
+    UNUSED_ATTRIBUTE std::vector<ValueType> &result,
+    UNUSED_ATTRIBUTE const ConjunctionScanPredicate *csp_p) {
   if (scan_direction == ScanDirectionType::INVALID) {
     throw Exception("Invalid scan direction \n");
   }
@@ -132,7 +131,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
   LOG_TRACE("Scan() Point Query = %d; Full Scan = %d ", csp_p->IsPointQuery(),
             csp_p->IsFullIndexScan());
 
-  if (csp_p->IsPointQuery()) {
+  if (csp_p->IsPointQuery() == true) {
     const storage::Tuple *point_query_key_p = csp_p->GetPointQueryKey();
 
     KeyType point_query_key;
@@ -142,25 +141,21 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // (slightly less code), but since ScanKey() is a virtual function
     // this would induce an overhead for point query, which must be highly
     // optimized and super fast
-    LOG_DEBUG("Point query is %s", point_query_key_p->GetInfo().c_str());
     container.GetValue(point_query_key, result);
-  } else if (csp_p->IsFullIndexScan()) {
+  } else if (csp_p->IsFullIndexScan() == true) {
     // If it is a full index scan, then just do the scan
     // until we have reached the end of the index by the same
     // we take the snapshot of the last leaf node
-    for (auto cursor = container.begin(); (cursor != nullptr);
-         cursor = container.next(cursor)) {
-      result.push_back(cursor->item_value);
+    for (auto scan_itr = container.begin(); (scan_itr != nullptr);
+         scan_itr++) {
+      result.push_back(scan_itr->item_value);
     }  // for it from begin() to end()
   } else {
     const storage::Tuple *low_key_p = csp_p->GetLowKey();
     const storage::Tuple *high_key_p = csp_p->GetHighKey();
-    const catalog::Schema *schema = metadata->GetTupleSchema();
 
     LOG_TRACE("Partial scan low key: %s\n high key: %s",
               low_key_p->GetInfo().c_str(), high_key_p->GetInfo().c_str());
-
-
 
     // Construct low key and high key in KeyType form, rather than
     // the standard in-memory tuple
@@ -169,77 +164,16 @@ void SKIPLIST_INDEX_TYPE::Scan(
     index_low_key.SetFromKey(low_key_p);
     index_high_key.SetFromKey(high_key_p);
 
-    PL_ASSERT(value_list.size() == tuple_column_id_list.size());
-    PL_ASSERT(value_list.size() == expr_list.size());
-    size_t expr_size = expr_list.size();
-    // We use skiplist Begin() to first reach the lower bound
+    // We use bwtree Begin() to first reach the lower bound
     // of the search key
     // Also we keep scanning until we have reached the end of the index
     // or we have seen a key higher than the high key
     for (auto cursor = container.begin(index_low_key);
          (cursor != nullptr) && (container.KeyCmpLessEqual(cursor->node_key, index_high_key));
-         cursor = container.next(cursor)) {
-
-      storage::Tuple lhs = cursor->node_key.GetTupleForComparison(schema);
-      schema->GetInfo();
-
-      LOG_DEBUG("Schema has %ld columns %s\n", schema->GetColumnCount(), schema->GetInfo().c_str());
-      bool matchExprs = true;
-      for (size_t i = 0; i < expr_size && matchExprs; i++) {
-        type::Value rhsValue = value_list.at(i);
-        type::Value lhsValue = lhs.GetValue(tuple_column_id_list.at(i));
-        LOG_DEBUG("Get the value at %d; lhsValue is %s & rhsValue is %s",
-                  tuple_column_id_list.at(i),
-                  lhsValue.GetInfo().c_str(),
-                  rhsValue.GetInfo().c_str());
-        switch (expr_list.at(i)) {
-          case ExpressionType::COMPARE_EQUAL: {
-            LOG_DEBUG("EQUAL");
-            matchExprs &= lhsValue.CompareEquals(rhsValue);
-            break;
-          }
-          case ExpressionType::COMPARE_NOTEQUAL: {
-            LOG_DEBUG("NOTEQUAL");
-            matchExprs &= lhsValue.CompareNotEquals(rhsValue);
-            break;
-          }
-
-          case ExpressionType::COMPARE_LESSTHAN: {
-            LOG_DEBUG("LESSTHAN");
-            matchExprs &= lhsValue.CompareLessThan(rhsValue);
-            break;
-          }
-          case ExpressionType::COMPARE_GREATERTHAN: {
-            LOG_DEBUG("GREATERTHAN");
-            matchExprs &= lhsValue.CompareGreaterThan(rhsValue);
-            break;
-          }
-          case ExpressionType::COMPARE_LESSTHANOREQUALTO: {
-            LOG_DEBUG("LESSTHANOREQUALTO");
-            matchExprs &= lhsValue.CompareLessThanEquals(rhsValue);
-            break;
-          }
-
-          case ExpressionType::COMPARE_GREATERTHANOREQUALTO: {
-            LOG_DEBUG("GREATERTHANOREQUALTO");
-            matchExprs &= lhsValue.CompareGreaterThanEquals(rhsValue);
-            break;
-          }
-          case ExpressionType::COMPARE_LIKE:
-          case ExpressionType::COMPARE_NOTLIKE:
-          case ExpressionType::COMPARE_IN:
-          default: {
-            throw Exception("Invalid compare expression \n");
-          }
-        }
-      }
-      if (matchExprs) {
-        LOG_DEBUG("Got a match!");
-        result.push_back(cursor->item_value);
-      }
+         cursor = cursor->get_right_node()) {
+      result.push_back(cursor->item_value);
     }
   }  // if is full scan
-
 
   if (FLAGS_stats_mode != STATS_TYPE_INVALID) {
     stats::BackendStatsContext::GetInstance()->IncrementIndexReads(
@@ -278,6 +212,7 @@ void SKIPLIST_INDEX_TYPE::ScanLimit(
   if (scan_direction == ScanDirectionType::INVALID) {
     throw Exception("Invalid scan direction \n");
   }
+
 
   if (result.size() >= offset) {
     result.erase(result.begin(), result.begin() + offset);
