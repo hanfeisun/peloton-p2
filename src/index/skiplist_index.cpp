@@ -99,7 +99,7 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
 //        result.size(), metadata);
 //  }
 
-  LOG_DEBUG("skiplist_index ScanKey() returning with size %lu\n", result.size());
+//  LOG_DEBUG("skiplist_index ScanKey() returning with size %lu\n", result.size());
 
   return;
 }
@@ -137,7 +137,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
 
   if (csp_p->IsPointQuery() == true) {
 
-    LOG_DEBUG("point query detected");
+//    LOG_DEBUG("point query detected");
     const storage::Tuple *point_query_key_p = csp_p->GetPointQueryKey();
 
     KeyType point_query_key;
@@ -252,7 +252,7 @@ void SKIPLIST_INDEX_TYPE::ScanAllKeys(
         result.size(), metadata);
   }
 
-  LOG_DEBUG("skiplist_index ScanAllKeys() returning with size %lu\n", result.size());
+//  LOG_DEBUG("skiplist_index ScanAllKeys() returning with size %lu\n", result.size());
 
   return;
 }
