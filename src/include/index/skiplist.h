@@ -105,25 +105,25 @@ namespace peloton {
        */
       bool insert(const KeyType &key, const ValueType &value) {
 
-        std::ostringstream ss;
-        ss << std::this_thread::get_id();
-        std::string idstr = ss.str();
-
-        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
-        printSkipListStructure();  // todo: need to remove this
+//        std::ostringstream ss;
+//        ss << std::this_thread::get_id();
+//        std::string idstr = ss.str();
+//
+//        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
+//        printSkipListStructure();  // todo: need to remove this
 
         // if not support duplicate key and key exists
         if (!supportDupKey) {
           BaseNode *found = search_key(key, 0, find_equal);
           if (found != nullptr && !(found->is_deleted())) {
-            LOG_DEBUG("dup found. Refuse insertion\n");  // todo: need to remove this
+//            LOG_DEBUG("dup found. Refuse insertion\n");  // todo: need to remove this
             return false;
           }
         }
         else{
           // check (key,value) pair already exists
           BaseNode *found = search_key(key, 0, find_equal);
-          LOG_DEBUG("support dup key but not dup key-value pair\n");  // todo: need to remove this
+//          LOG_DEBUG("support dup key but not dup key-value pair\n");  // todo: need to remove this
           if (found != nullptr) {
             while(!(found->is_footer_node()) && KeyCmpEqual(found->node_key, key)) {
               if (ValueCmpEqual(found->item_value, value)) return false;
@@ -136,7 +136,7 @@ namespace peloton {
         // insert from level 0 up until maxLevel
         // max level will be in range [0, 15] inclusive
         int maxLevel = generateLevel();
-        LOG_DEBUG("insert level is %d\n", maxLevel);  // todo: need to remove this
+//        LOG_DEBUG("insert level is %d\n", maxLevel);  // todo: need to remove this
         std::vector<BaseNode *> nodes;
 
         // bottom up insertion, contrasting top-down deletion
@@ -169,19 +169,20 @@ namespace peloton {
            */
           while (true) {
             BaseNode *prev = level_find_insert_pos(key, i);
+            BaseNode *ptrValue  = prev->get_right_node();
 
             //test code below, just checking  //todo: improve this
 
 
             if (!supportDupKey) {
-              BaseNode *dada = prev->get_right_node();
+              BaseNode *dada = ptrValue;
               if (!(dada->is_footer_node()) && KeyCmpEqual(dada->node_key, key) && !(dada->is_deleted())) {
                 return false;
               }
             }
             else{
               // check (key,value) pair already exists
-              BaseNode *dada = prev->get_right_node();
+              BaseNode *dada = ptrValue;
               if (dada != nullptr) {
                 while(!(dada->is_footer_node()) && KeyCmpEqual(dada->node_key, key)) {
                   if (ValueCmpEqual(dada->item_value, value) && !(dada->is_deleted())) return false;
@@ -191,7 +192,7 @@ namespace peloton {
             }
 
 //            LOG_DEBUG("find pos done\n");  // todo: need to remove this
-            BaseNode *ptrValue  = prev->get_right_node();
+
 //            LOG_DEBUG("get right done\n");  // todo: need to remove this
             node->right = ptrValue;
 //            LOG_DEBUG("right assign done done\n");  // todo: need to remove this
@@ -201,15 +202,15 @@ namespace peloton {
             }
           }
         }
-        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
-        printSkipListStructure();  // todo: need to remove this
+//        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
+//        printSkipListStructure();  // todo: need to remove this
         return true;
       }
 
       bool delete_key(const KeyType &key, const ValueType &value) {
 
-        LOG_DEBUG("before delete\n");  // todo: need to remove this
-        printSkipListStructure();  // todo: need to remove this
+//        LOG_DEBUG("before delete\n");  // todo: need to remove this
+//        printSkipListStructure();  // todo: need to remove this
 
         BaseNode *found = search_key(key, 0, find_equal);
         if (found == nullptr) return false;  // no such key
@@ -220,6 +221,8 @@ namespace peloton {
         }
 
         // control reaches here, then we are sure that found == node needs deleting
+        assert(KeyCmpEqual(found->node_key, key));
+        assert(ValueCmpEqual(found->item_value, value));
 
         // some other node is deleting this node as well. We accept their kindness
         if (found->is_deleted()) return true;
@@ -232,28 +235,29 @@ namespace peloton {
         // go to top node
         for (int i = topLevel; i > 0; i--) {
           currentDeleteNode = currentDeleteNode -> up;
+          currentDeleteNode->mark_deleted();
         }
 
         // top down delete
         int currentLevel = topLevel;
         while (currentLevel >= 0) {
           BaseNode *prev = find_prev_node(currentDeleteNode, currentLevel);
-          if (prev == nullptr) {  // this node has been removed
-            currentDeleteNode = currentDeleteNode -> down;
-            currentLevel --;
+          if (prev == nullptr) {
+            // this node has been removed, meaning someone else is deleting. We can return now.
+//            currentDeleteNode = currentDeleteNode -> down;
+//            currentLevel --;
+            return true;
           }
           else {
-
-            BaseNode *ptrValue = prev->get_right_node();
-            if (__sync_bool_compare_and_swap(&(prev->right), ptrValue, currentDeleteNode->get_right_node())) {
+            if (__sync_bool_compare_and_swap(&(prev->right), currentDeleteNode, currentDeleteNode->get_right_node())) {
               currentDeleteNode = currentDeleteNode -> down;
               currentLevel --;
             }
           }
         }
 
-        LOG_DEBUG("after delete\n");  // todo: need to remove this
-        printSkipListStructure();  // todo: need to remove this
+//        LOG_DEBUG("after delete\n");  // todo: need to remove this
+//        printSkipListStructure();  // todo: need to remove this
         return true;
       }
 
@@ -444,6 +448,12 @@ namespace peloton {
           prev = prev -> get_right_node();
           if (prev->is_footer_node() || KeyCmpGreater(prev->node_key, node->node_key)) return nullptr;
         }
+//        BaseNode *prev =  header[level];
+//        while (1) {
+//          if (prev->get_right_node() == node) return prev;
+//          if (prev->is_footer_node()) return nullptr;
+//          prev = prev->get_right_node();
+//        }
       }
 
 
