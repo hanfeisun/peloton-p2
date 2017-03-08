@@ -563,7 +563,10 @@ namespace peloton {
           this->next = nullptr;
         };
 
-        ~GCNode() {};
+        // delete myself, as well as the GCNode I am tracking
+        ~GCNode() {
+          delete nodeToGC;
+        };
 
         bool safeToGC(uint64_t safeEpoch) {
           return added_epoch < safeEpoch;
@@ -582,6 +585,57 @@ namespace peloton {
           this.head = new GCNode();  // create a dummy header
           this.tail = head;
         }
+
+        void addGCNode(BaseNode *node, uint64_t epoch) {
+
+          // this method should be called by one and only one thread:
+          // the creator of this node
+          assert(std::this_thread::get_id() == threadID);
+
+          // tail should never be null.
+          assert(tail != nullptr);
+          GCNode *newGCNode = new GCNode(node, epoch);
+
+          // no need to compare and swap, as only 1 thread will be appending nodes
+          this->tail->next = newGCNode;
+          this->tail = newGCNode;
+        };
+
+        int performGC(uint64_t safeEpoch) {
+          GCNode *current = head;
+
+          // to be safe, we should always leave at least 1 node in list
+          if (current == tail) return 0;
+
+          int nodeFreed = 0;
+
+          while (current != tail) {
+            if (current->safeToGC(safeEpoch)) {
+              GCNode *tmp = current -> next;
+              delete current;
+              current = tmp;
+              head = current;
+              nodeFreed ++;
+            }
+            else{
+              break;
+            }
+          }
+        };
+
+        bool threadNeedGC() {
+          return head != tail;
+        }
+
+        // destructor, free all node unconditionally
+        ~ThreadNode() {
+          GCNode *current = head;
+          while (current != nullptr) {
+            GCNode *tmp = current -> next;
+            delete current;
+            current = tmp;
+          }
+        };
       };
 
       class GCManager {
@@ -589,61 +643,98 @@ namespace peloton {
         static const int MAX_NUM_THREADS = 256;
 
       public:
-        GCManager() {
-          this->currentEmptyPos = 0;
-          this->totalMemoryUsage = 0;
+        GCManager():currentEmptyPos{0}, totalMemoryUsage{0}{
           for (int i = 0; i < MAX_NUM_THREADS; i++) allNodes[i] == nullptr;
         }
 
-        void enterEpoch() {
+        int getSlotIndex(std::thread::id myThreadID) {
           int currentSize = currentEmptyPos;
           int idx = -1;
-          std::thread::id myThreadID = std::this_thread::get_id();
           for (int i = 0; i < currentSize; i++) {
-            if (allThreadNodes[i]->threadID == myThreadID) {
+            if (allNodes[i]->threadID == myThreadID) {
               idx = i;
               break;
             }
           }
+          return myThreadID;
+        }
+
+        void enterEpoch() {
+
+          std::thread::id myThreadID = std::this_thread::get_id();
+          int idx = getSlotIndex(myThreadID);
           // no slot allocated
           if (idx == -1) {
-            int mySlot;
-            while (1) {
-              mySlot = currentEmptyPos;
-              int nextSlot = mySlot + 1;
-              if (__sync_bool_compare_and_swap(&(currentEmptyPos), mySlot, nextSlot)) {
-                break;
-              }
-            }
+            uint mySlot = currentEmptyPos.fetch_add(1);
             idx = mySlot;
-            allThreadNodes[idx] == new ThreadNode(myThreadID);
+            assert(allNodes[idx] == nullptr);
+            allNodes[idx] == new ThreadNode(myThreadID);
           }
-
-          allThreadNodes[idx]->isActive = true;
-          allThreadNodes[idx]->threadEpoch = GetCurrentEpoch();
+          allNodes[idx]->isActive = true;
+          allNodes[idx]->threadEpoch = GetCurrentEpoch();
         }
 
         void leaveEpoch() {
-          // do your work here
+          int idx = getSlotIndex(std::this_thread::get_id());
+          assert(idx != -1);
+          allNodes[idx]->isActive = false;
         }
 
+        void addGCNode(BaseNode *node) {
+          int idx = getSlotIndex(std::this_thread::get_id());
+          assert(idx != -1);
+          allNodes[idx]->addGCNode(node);
+        }
 
         //for all non-empty slot in allThreadNodes, if nodesForGC has content, return true
-        bool needGC() {}
+        bool needGC() {
+          int currentSize = currentEmptyPos;
+          for (int i = 0; i < currentSize; i++) {
+            if (allNodes[i]->threadNeedGC()) {
+              return true;
+            }
+          }
+          return false;
+        }
         // perform GC
-        void performGC() {  }
-        void addMemoryUsage() { totalMemoryUsage += sizeof(BaseNode); }
-        void getMemoryUsage() { return totalMemoryUsage; }
+        void performGC() {
+          int currentSize = currentEmptyPos;
+
+          uint64_t safeEpoch = GetCurrentEpoch();
+          safeEpoch += 256; // move our clock forward for 256 ms to be safe
+          for (int i = 0; i < currentSize; i++) {
+            if (allNodes[i]->isActive && allNodes[i]->added_epoch < safeEpoch) {
+              safeEpoch = allNodes[i]->added_epoch;
+            }
+          }
+          safeEpoch -= 256; // move our clock backward for 256 ms to be safe
+
+          for (int i = 0; i < currentSize; i++) {
+            int nodesRecycled = allNodes[i]->performGC(safeEpoch);
+            totalMemoryUsage -= (sizeof(BaseNode) * nodesRecycled);
+          }
+        }
+
+        void addMemoryUsage() {
+          totalMemoryUsage += sizeof(BaseNode);
+        }
+
+        int getMemoryUsage() {
+          uint usage = totalMemoryUsage;
+          return usage;
+        }
+
         ~GCManager() {
-          // for all new, you need free
-          // and for allThreadNodes, if nodesForGC has content, you need free
+          for (int i = 0; i < currentEmptyPos; i++) {
+            delete allNodes[i];
+          }
         }
 
 
       private:
         ThreadNode *allNodes[MAX_NUM_THREADS];
-        int currentEmptyPos;
-        std::atomic<unsigned int> totalMemoryUsage;
+        std::atomic_uint currentEmptyPos;
+        std::atomic_uint totalMemoryUsage;
 
         uint64_t GetCurrentEpoch() {
           struct timeval tp;
