@@ -21,6 +21,8 @@
 #include "common/logger.h"
 #include <sstream>
 #include <strings.h>
+#include <sys/time.h>
+#include <atomic>
 
 
 namespace peloton {
@@ -79,9 +81,9 @@ namespace peloton {
          */
         for (short i = 0; i < SKIPLIST_MAX_LEVEL; ++i) {
           BaseNode *h_node = new BaseNode(NodeType::HeaderNode, i);
-          h_node->topLevel = SKIPLIST_MAX_LEVEL;
+          h_node->topLevel = SKIPLIST_MAX_LEVEL - 1;
           BaseNode *f_node = new BaseNode(NodeType::FooterNode, i);
-          f_node->topLevel = SKIPLIST_MAX_LEVEL;
+          f_node->topLevel = SKIPLIST_MAX_LEVEL - 1;
 
           h_node->right = f_node;
 
@@ -95,7 +97,9 @@ namespace peloton {
         std::srand(std::time(0));  //  seed random number generator
       }
 
-      ~SkipList() {}
+      ~SkipList() {
+        checkStructureIntegrityBeforeExit();
+      }
 
       /*
        * Insert key into skip list
@@ -136,6 +140,7 @@ namespace peloton {
         // insert from level 0 up until maxLevel
         // max level will be in range [0, 15] inclusive
         int maxLevel = generateLevel();
+        assert(maxLevel >= 0 && maxLevel < SKIPLIST_MAX_LEVEL);
 //        LOG_DEBUG("insert level is %d\n", maxLevel);  // todo: need to remove this
         std::vector<BaseNode *> nodes;
 
@@ -185,7 +190,9 @@ namespace peloton {
               BaseNode *dada = ptrValue;
               if (dada != nullptr) {
                 while(!(dada->is_footer_node()) && KeyCmpEqual(dada->node_key, key)) {
-                  if (ValueCmpEqual(dada->item_value, value) && !(dada->is_deleted())) return false;
+                  if (ValueCmpEqual(dada->item_value, value) && !(dada->is_deleted())) {
+                    return false;
+                  }
                   dada = dada->get_right_node();
                 }
               }
@@ -213,11 +220,15 @@ namespace peloton {
 //        printSkipListStructure();  // todo: need to remove this
 
         BaseNode *found = search_key(key, 0, find_equal);
-        if (found == nullptr) return false;  // no such key
+        if (found == nullptr) {
+          return false;
+        }  // no such key
 
         while (!ValueCmpEqual(found->item_value, value)) {
           found = get_right_undeleted_node(found);
-          if (found == nullptr || found->is_footer_node() || !KeyCmpEqual(found->node_key, key)) return false;
+          if (found == nullptr || found->is_footer_node() || !KeyCmpEqual(found->node_key, key)) {
+            return false;
+          }
         }
 
         // control reaches here, then we are sure that found == node needs deleting
@@ -244,15 +255,19 @@ namespace peloton {
           BaseNode *prev = find_prev_node(currentDeleteNode, currentLevel);
           if (prev == nullptr) {
             // this node has been removed, meaning someone else is deleting. We can return now.
-//            currentDeleteNode = currentDeleteNode -> down;
-//            currentLevel --;
-            return true;
+            currentDeleteNode = currentDeleteNode -> down;
+            currentLevel --;
           }
           else {
             if (__sync_bool_compare_and_swap(&(prev->right), currentDeleteNode, currentDeleteNode->get_right_node())) {
               currentDeleteNode = currentDeleteNode -> down;
               currentLevel --;
             }
+//            else {
+//              LOG_DEBUG("keep failing\n");
+//              LOG_DEBUG("on level %d was %p from %p I am %p new %p\n", currentLevel, prev->right, prev, currentDeleteNode, currentDeleteNode->get_right_node());
+//
+//            }
           }
         }
 
@@ -410,8 +425,8 @@ namespace peloton {
 //                  }
 //                  return current_node;
 //                } else {
-                  current_level--;
-                  current_node = current_node->down;
+                current_level--;
+                current_node = current_node->down;
 //                }
               }
             }
@@ -457,13 +472,11 @@ namespace peloton {
       }
 
 
-//      int generateLevel() { return 0; }
       int generateLevel() {
         int bound = (1 << SKIPLIST_MAX_LEVEL) - 1;
         int random = std::rand() % bound;
         return ffs(random + 1) - 1;
       }
-//      int generateLevel() { return std::rand() & (SKIPLIST_MAX_LEVEL - 1); }
 
       /*
        * Given a key and level number, return the node in this after
@@ -495,8 +508,15 @@ namespace peloton {
          * deleted
          */
         void mark_deleted() {
-          right =
-            reinterpret_cast<BaseNode *>((reinterpret_cast<uint64_t>(right)) | 0x1);
+
+          while(1) {
+            BaseNode *curRight = right;
+            uint64_t rightVal = reinterpret_cast<uint64_t>(curRight);
+            BaseNode *rightPtrNew = reinterpret_cast<BaseNode *>(rightVal | 0x1);
+            if (__sync_bool_compare_and_swap(&(right), curRight, rightPtrNew)){
+              return;
+            }
+          }
         }
 
         bool is_deleted() {
@@ -504,8 +524,7 @@ namespace peloton {
         };
 
         BaseNode* get_right_node() {
-          return reinterpret_cast<BaseNode *>((reinterpret_cast<uint64_t>(right)) &
-                                              (~0x1));
+          return reinterpret_cast<BaseNode *>((reinterpret_cast<uint64_t>(right)) & (~0x1));
         }
 
         bool is_header_node() { return this->node_type == NodeType::HeaderNode; }
@@ -526,6 +545,111 @@ namespace peloton {
           this->node_key = node_key;
           this->item_value = item_value;
           this->topLevel = 0;
+        }
+      };
+
+      class GCNode {
+      public:
+        uint64_t added_epoch;
+        BaseNode *nodeToGC;
+        GCNode *next;
+        GCNode() {
+          this->added_epoch = 0;
+          this->nodeToGC = nullptr;
+          this->next = nullptr;
+        }
+
+        GCNode(BaseNode *node, uint64_t epoch): nodeToGC(node), added_epoch(epoch)  {
+          this->next = nullptr;
+        };
+
+        ~GCNode() {};
+
+        bool safeToGC(uint64_t safeEpoch) {
+          return added_epoch < safeEpoch;
+        }
+      };
+
+      class ThreadNode {
+      public:
+        std::thread::id threadID;
+        uint64_t added_epoch;
+        bool isActive;
+        GCNode *head;
+        GCNode *tail;
+        ThreadNode(std::thread::id callerID, uint64_t epoch): threadID(callerID), added_epoch(epoch) {
+          this->isActive = false;
+          this.head = new GCNode();  // create a dummy header
+          this.tail = head;
+        }
+      };
+
+      class GCManager {
+
+        static const int MAX_NUM_THREADS = 256;
+
+      public:
+        GCManager() {
+          this->currentEmptyPos = 0;
+          this->totalMemoryUsage = 0;
+          for (int i = 0; i < MAX_NUM_THREADS; i++) allNodes[i] == nullptr;
+        }
+
+        void enterEpoch() {
+          int currentSize = currentEmptyPos;
+          int idx = -1;
+          std::thread::id myThreadID = std::this_thread::get_id();
+          for (int i = 0; i < currentSize; i++) {
+            if (allThreadNodes[i]->threadID == myThreadID) {
+              idx = i;
+              break;
+            }
+          }
+          // no slot allocated
+          if (idx == -1) {
+            int mySlot;
+            while (1) {
+              mySlot = currentEmptyPos;
+              int nextSlot = mySlot + 1;
+              if (__sync_bool_compare_and_swap(&(currentEmptyPos), mySlot, nextSlot)) {
+                break;
+              }
+            }
+            idx = mySlot;
+            allThreadNodes[idx] == new ThreadNode(myThreadID);
+          }
+
+          allThreadNodes[idx]->isActive = true;
+          allThreadNodes[idx]->threadEpoch = GetCurrentEpoch();
+        }
+
+        void leaveEpoch() {
+          // do your work here
+        }
+
+
+        //for all non-empty slot in allThreadNodes, if nodesForGC has content, return true
+        bool needGC() {}
+        // perform GC
+        void performGC() {  }
+        void addMemoryUsage() { totalMemoryUsage += sizeof(BaseNode); }
+        void getMemoryUsage() { return totalMemoryUsage; }
+        ~GCManager() {
+          // for all new, you need free
+          // and for allThreadNodes, if nodesForGC has content, you need free
+        }
+
+
+      private:
+        ThreadNode *allNodes[MAX_NUM_THREADS];
+        int currentEmptyPos;
+        std::atomic<unsigned int> totalMemoryUsage;
+
+        uint64_t GetCurrentEpoch() {
+          struct timeval tp;
+          gettimeofday(&tp, NULL);
+          uint64_t ms = tp.tv_sec * 1000 + tp.tv_usec / 1000;
+          return ms;
         }
       };
 
@@ -593,7 +717,7 @@ namespace peloton {
 
             BaseNode *nn = node->get_right_node();
             if ((!(nn->is_footer_node())) && KeyCmpGreater(node->node_key, nn->node_key)) {
-              LOG_DEBUG("FUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCK\n");
+              LOG_DEBUG("Error Detected\n");
             }
 
             output = output + std::string("a key") + "-->";
@@ -603,6 +727,22 @@ namespace peloton {
           output = output + "END";
           LOG_DEBUG("%s\n", output.c_str());
         }
+      }
+
+      void checkStructureIntegrityBeforeExit() {
+        LOG_DEBUG("Checking structure integrity");
+
+        for (int i = SKIPLIST_MAX_LEVEL - 1; i >= 0; i--) {
+          BaseNode *node = header[i];
+
+          while (node != nullptr) {
+            if (node->is_deleted()) {
+              LOG_DEBUG("Error: StructureIntegrity violated!");
+            }
+            node = node -> get_right_node();
+          }
+        }
+        LOG_DEBUG("Checking passed");
       }
 
     };  // End skiplist class
