@@ -168,8 +168,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // If it is a full index scan, then just do the scan
     // until we have reached the end of the index by the same
     // we take the snapshot of the last leaf node
-    for (auto scan_itr = container.begin(); (scan_itr != nullptr);
-         scan_itr++) {
+    for (auto scan_itr = container.begin(); (scan_itr != nullptr); scan_itr=container.next(scan_itr)) {
       result.push_back(scan_itr->item_value);
     }  // for it from begin() to end()
   } else {
