@@ -105,10 +105,32 @@ void SKIPLIST_INDEX_TYPE::ScanKey(
 
 SKIPLIST_TEMPLATE_ARGUMENTS
 bool SKIPLIST_INDEX_TYPE::CondInsertEntry(
-    UNUSED_ATTRIBUTE const storage::Tuple *key,
-    UNUSED_ATTRIBUTE ItemPointer *value,
-    UNUSED_ATTRIBUTE std::function<bool(const void *)> predicate) {
+    const storage::Tuple *key,
+    ItemPointer *value,
+    std::function<bool(const void *)> predicate) {
+
+
+  bool predicate_satisfied = false;
+
+  for (auto cursor = container.begin(); (cursor != nullptr); cursor = container.next(cursor)) {
+    predicate_satisfied |= predicate(cursor->item_value);
+    if (predicate_satisfied) {
+      break;
+    }
+  }
+
   bool ret = false;
+
+  if (predicate_satisfied) {
+    ret = false;
+  } else {
+    InsertEntry(key, value);
+    ret = true;
+  }
+
+  if (FLAGS_stats_mode != STATS_TYPE_INVALID) {
+    stats::BackendStatsContext::GetInstance()->IncrementIndexInserts(metadata);
+  }
   return ret;
 }
 
