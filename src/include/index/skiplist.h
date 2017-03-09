@@ -36,11 +36,12 @@ namespace peloton {
             typename KeyEqualityChecker, typename ValueEqualityChecker>
 
 #define SKIPLIST_MAX_LEVEL 16
+#define MAX_NUM_THREADS 256
 
     SKIPLIST_TEMPLATE_ARGUMENTS
     class SkipList {
       class BaseNode;
-      class EpochManager;
+      class GCManager;
 
       const KeyComparator key_cmp_obj;
       const KeyEqualityChecker key_eq_obj;
@@ -98,7 +99,22 @@ namespace peloton {
       }
 
       ~SkipList() {
-        checkStructureIntegrityBeforeExit();
+        for (int i = SKIPLIST_MAX_LEVEL - 1; i >= 0; i--) {
+          BaseNode *node = header[i];
+          while (node != nullptr) {
+            assert(!node->is_deleted());
+            BaseNode *tmp = node->right;
+            delete node;
+            node = tmp;
+          }
+        }
+      }
+
+      bool insert(const KeyType &key, const ValueType &value) {
+        gcManager.enterEpoch();
+        bool result = insert_helper(key, value);
+        gcManager.leaveEpoch();
+        return result;
       }
 
       /*
@@ -107,13 +123,13 @@ namespace peloton {
        * else on each level, find the desired position to insert the
        * key using CAS. repeat until insertion succeed
        */
-      bool insert(const KeyType &key, const ValueType &value) {
+      bool insert_helper(const KeyType &key, const ValueType &value) {
 
 //        std::ostringstream ss;
 //        ss << std::this_thread::get_id();
-//        std::string idstr = ss.str();
+//        std::string idStr = ss.str();
 //
-//        LOG_DEBUG("thread %s before insert\n", idstr.c_str());  // todo: need to remove this
+//        LOG_DEBUG("thread %s before insert\n", idStr.c_str());  // todo: need to remove this
 //        printSkipListStructure();  // todo: need to remove this
 
         // if not support duplicate key and key exists
@@ -182,6 +198,8 @@ namespace peloton {
             if (!supportDupKey) {
               BaseNode *dada = ptrValue;
               if (!(dada->is_footer_node()) && KeyCmpEqual(dada->node_key, key) && !(dada->is_deleted())) {
+                assert(i == 0);
+                delete node;
                 return false;
               }
             }
@@ -191,6 +209,8 @@ namespace peloton {
               if (dada != nullptr) {
                 while(!(dada->is_footer_node()) && KeyCmpEqual(dada->node_key, key)) {
                   if (ValueCmpEqual(dada->item_value, value) && !(dada->is_deleted())) {
+                    assert(i == 0);
+                    delete node;
                     return false;
                   }
                   dada = dada->get_right_node();
@@ -204,17 +224,25 @@ namespace peloton {
             node->right = ptrValue;
 //            LOG_DEBUG("right assign done done\n");  // todo: need to remove this
             if (__sync_bool_compare_and_swap(&(prev->right), ptrValue, node)) {
-//              LOG_DEBUG("CAS SUCCESS\n");  // todo: need to remove this
+              gcManager.addMemoryUsage();
               break;
             }
           }
         }
-//        LOG_DEBUG("thread %s after insert\n", idstr.c_str());  // todo: need to remove this
+//        LOG_DEBUG("thread %s after insert\n", idStr.c_str());  // todo: need to remove this
 //        printSkipListStructure();  // todo: need to remove this
         return true;
       }
 
+
       bool delete_key(const KeyType &key, const ValueType &value) {
+        gcManager.enterEpoch();
+        bool result = delete_key_helper(key, value);
+        gcManager.leaveEpoch();
+        return result;
+      }
+
+      bool delete_key_helper(const KeyType &key, const ValueType &value) {
 
 //        LOG_DEBUG("before delete\n");  // todo: need to remove this
 //        printSkipListStructure();  // todo: need to remove this
@@ -260,6 +288,7 @@ namespace peloton {
           }
           else {
             if (__sync_bool_compare_and_swap(&(prev->right), currentDeleteNode, currentDeleteNode->get_right_node())) {
+              gcManager.addGCNode(currentDeleteNode);
               currentDeleteNode = currentDeleteNode -> down;
               currentLevel --;
             }
@@ -277,6 +306,12 @@ namespace peloton {
       }
 
       void GetValue(const KeyType &key, std::vector<ValueType> &value_list) {
+        gcManager.enterEpoch();
+        GetValueHelper(key, value_list);
+        gcManager.leaveEpoch();
+      }
+
+      void GetValueHelper(const KeyType &key, std::vector<ValueType> &value_list) {
 //        LOG_DEBUG("GetValue()");
 //        printSkipListStructure();
         BaseNode *found = search_key(key, 0, find_equal);
@@ -301,27 +336,36 @@ namespace peloton {
       using KeyValuePair = std::pair<KeyType, ValueType>;
 
       BaseNode* begin() {
-        BaseNode *start = header[0];
-        return get_right_undeleted_node(start);
+        gcManager.enterEpoch();
+        BaseNode *result = get_right_undeleted_node(header[0]);
+        gcManager.leaveEpoch();
+        return result;
       }
 
       BaseNode* begin(KeyType& lowKey) {
+        gcManager.enterEpoch();
         BaseNode *start = search_key(lowKey, 0, find_greater_equal);
+        gcManager.leaveEpoch();
         return start;
       }
 
       BaseNode* next(BaseNode *current) {
-        return get_right_undeleted_node(current);
+        gcManager.enterEpoch();
+        BaseNode *result = get_right_undeleted_node(current);
+        gcManager.leaveEpoch();
+        return result;
       }
 
 
       // This gives a hint on whether GC is needed on the index
       // For those that do not need GC this always return false
-      bool NeedGC() { return false; }  // TODO: add need gc check
+      bool NeedGC() { return gcManager.needGC(); }
 
       // This function performs one round of GC
       // For those that do not need GC this should return immediately
-      void PerformGC() { return; }  // TODO: add perform gc
+      void PerformGC() { gcManager.performGC(); }
+
+      uint getCurrentHeapUsage() { return gcManager.getMemoryUsage(); }
 
 
       /*
@@ -333,6 +377,7 @@ namespace peloton {
     private:
       std::vector<BaseNode *> header;
       std::vector<BaseNode *> footer;
+      GCManager gcManager;
       bool supportDupKey;  //  whether or not support duplicate key in skiplist
 
       /*
@@ -559,41 +604,47 @@ namespace peloton {
           this->next = nullptr;
         }
 
-        GCNode(BaseNode *node, uint64_t epoch): nodeToGC(node), added_epoch(epoch)  {
+        GCNode(BaseNode *node, uint64_t epoch) {
+          this->nodeToGC = node;
+          this->added_epoch = epoch;
           this->next = nullptr;
         };
 
         // delete myself, as well as the GCNode I am tracking
+        // note: it is safe to delete a nullptr, as specified by c++ specs
         ~GCNode() {
           delete nodeToGC;
         };
 
         bool safeToGC(uint64_t safeEpoch) {
-          return added_epoch < safeEpoch;
+          return this->added_epoch < safeEpoch;
         }
       };
 
       class ThreadNode {
       public:
         std::thread::id threadID;
-        uint64_t added_epoch;
+        uint64_t threadEpoch;
         bool isActive;
-        GCNode *head;
-        GCNode *tail;
-        ThreadNode(std::thread::id callerID, uint64_t epoch): threadID(callerID), added_epoch(epoch) {
+        GCNode *head;  // points to the first gc node
+        GCNode *tail;  // points to the last gc node
+        ThreadNode(std::thread::id callerID, uint64_t epoch) {
+          this->threadID = callerID;
+          this->threadEpoch = epoch;
           this->isActive = false;
-          this.head = new GCNode();  // create a dummy header
-          this.tail = head;
+          this->head = new GCNode();  // create a dummy header
+          this->tail = head;
         }
 
         void addGCNode(BaseNode *node, uint64_t epoch) {
 
-          // this method should be called by one and only one thread:
-          // the creator of this node
+          // this method should be called by one and only one
+          // thread: the creator of this node
           assert(std::this_thread::get_id() == threadID);
 
           // tail should never be null.
           assert(tail != nullptr);
+          assert(tail->next == nullptr);
           GCNode *newGCNode = new GCNode(node, epoch);
 
           // no need to compare and swap, as only 1 thread will be appending nodes
@@ -603,16 +654,12 @@ namespace peloton {
 
         int performGC(uint64_t safeEpoch) {
           GCNode *current = head;
-
           // to be safe, we should always leave at least 1 node in list
-          if (current == tail) return 0;
-
           int nodeFreed = 0;
-
           while (current != tail) {
             if (current->safeToGC(safeEpoch)) {
               GCNode *tmp = current -> next;
-              delete current;
+              delete current;  // delete GCNode will delete Skiplist node as well
               current = tmp;
               head = current;
               nodeFreed ++;
@@ -621,6 +668,7 @@ namespace peloton {
               break;
             }
           }
+          return nodeFreed;
         };
 
         bool threadNeedGC() {
@@ -640,11 +688,9 @@ namespace peloton {
 
       class GCManager {
 
-        static const int MAX_NUM_THREADS = 256;
-
       public:
         GCManager():currentEmptyPos{0}, totalMemoryUsage{0}{
-          for (int i = 0; i < MAX_NUM_THREADS; i++) allNodes[i] == nullptr;
+          for(int i = 0; i < MAX_NUM_THREADS; i++) allNodes[i] = nullptr;
         }
 
         int getSlotIndex(std::thread::id myThreadID) {
@@ -656,22 +702,24 @@ namespace peloton {
               break;
             }
           }
-          return myThreadID;
+          return idx;
         }
 
         void enterEpoch() {
 
           std::thread::id myThreadID = std::this_thread::get_id();
           int idx = getSlotIndex(myThreadID);
+          uint64_t currentTime = GetCurrentEpoch();
           // no slot allocated
           if (idx == -1) {
             uint mySlot = currentEmptyPos.fetch_add(1);
             idx = mySlot;
+            assert(idx >= 0 && idx < MAX_NUM_THREADS);
             assert(allNodes[idx] == nullptr);
-            allNodes[idx] == new ThreadNode(myThreadID);
+            allNodes[idx] = new ThreadNode(myThreadID, currentTime);
           }
           allNodes[idx]->isActive = true;
-          allNodes[idx]->threadEpoch = GetCurrentEpoch();
+          allNodes[idx]->threadEpoch = currentTime;
         }
 
         void leaveEpoch() {
@@ -683,7 +731,7 @@ namespace peloton {
         void addGCNode(BaseNode *node) {
           int idx = getSlotIndex(std::this_thread::get_id());
           assert(idx != -1);
-          allNodes[idx]->addGCNode(node);
+          allNodes[idx]->addGCNode(node, GetCurrentEpoch());
         }
 
         //for all non-empty slot in allThreadNodes, if nodesForGC has content, return true
@@ -696,22 +744,22 @@ namespace peloton {
           }
           return false;
         }
+
         // perform GC
         void performGC() {
           int currentSize = currentEmptyPos;
 
           uint64_t safeEpoch = GetCurrentEpoch();
-          safeEpoch += 256; // move our clock forward for 256 ms to be safe
           for (int i = 0; i < currentSize; i++) {
-            if (allNodes[i]->isActive && allNodes[i]->added_epoch < safeEpoch) {
-              safeEpoch = allNodes[i]->added_epoch;
+            if (allNodes[i]->isActive && allNodes[i]->threadEpoch < safeEpoch) {
+              safeEpoch = allNodes[i]->threadEpoch;
             }
           }
           safeEpoch -= 256; // move our clock backward for 256 ms to be safe
 
           for (int i = 0; i < currentSize; i++) {
-            int nodesRecycled = allNodes[i]->performGC(safeEpoch);
-            totalMemoryUsage -= (sizeof(BaseNode) * nodesRecycled);
+            int numOfNodesRecycled = allNodes[i]->performGC(safeEpoch);
+            totalMemoryUsage -= (sizeof(BaseNode) * numOfNodesRecycled);
           }
         }
 
@@ -729,7 +777,6 @@ namespace peloton {
             delete allNodes[i];
           }
         }
-
 
       private:
         ThreadNode *allNodes[MAX_NUM_THREADS];
@@ -797,6 +844,7 @@ namespace peloton {
         return value_eq_obj(v1, v2);
       }
 
+      // messy code for debug purpose only
       void printSkipListStructure() {
         for (int i = SKIPLIST_MAX_LEVEL - 1; i >= 0; i--) {
           BaseNode *node = header[i];
@@ -814,12 +862,12 @@ namespace peloton {
             output = output + std::string("a key") + "-->";
             node = node->get_right_node();
           }
-
           output = output + "END";
           LOG_DEBUG("%s\n", output.c_str());
         }
       }
 
+      // messy code for debug purpose only
       void checkStructureIntegrityBeforeExit() {
         LOG_DEBUG("Checking structure integrity");
 
