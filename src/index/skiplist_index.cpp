@@ -192,7 +192,7 @@ void SKIPLIST_INDEX_TYPE::Scan(
     // or we have seen a key higher than the high key
     for (auto cursor = container.begin(index_low_key);
          (cursor != nullptr) && (container.KeyCmpLessEqual(cursor->node_key, index_high_key));
-         cursor = cursor->get_right_node()) {
+         cursor = container.next(cursor)) {
       result.push_back(cursor->item_value);
     }
   }  // if is full scan
